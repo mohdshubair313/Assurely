@@ -1,0 +1,9 @@
+Built-in image_gen tool; generated 2026-09-25. Final asset: frontend/public/images/house-clouds-3d.png
+
+Use case: stylized-concept. Asset type: high-resolution standalone hero illustration for the Assurely insurance website, NOT a website screenshot.
+Primary request: only a beautiful three-dimensional house nestled in and surrounded by soft voluminous clouds, charming and visually impressive.
+Input image role: the supplied screenshot is a STYLE AND HOUSE REFERENCE ONLY. Keep the general warm cream cottage architecture with slate blue pitched roofs and inviting windows; produce a fresh clean high-resolution illustration.
+Subject: a single detailed cream stone cottage, pitched blue-gray roof, small porch, warm inviting window glass, small landscaped garden with green shrubs immediately around its base. The cottage emerges naturally from a soft floating island of fluffy white clouds curling around and behind it.
+Composition: centered three-quarter architectural view, entire house visible, wide 4:3 asset with airy margins. The house is the dominant focal point and fills about 65 percent of the canvas. Clouds organically surround the house, including layers in the foreground. Soft pale blue atmospheric wisps, ivory highlights, premium realistic 3D render, tactile miniature diorama craftsmanship, excellent fine architectural detail and depth. Soft sunlight, gentle sky-blue shadows.
+Background: genuine transparent background around the cloud silhouette, preserve delicate cloud alpha edges so this can blend seamlessly onto an ivory #F8F5ED web canvas.
+Constraints: ONLY HOUSE, ITS SMALL GARDEN, AND CLOUDS. No people, no family, no policy documents, no paper sheets, no magnifying glass, no canopy/dome, no labels, no annotations, no floating badges, no words, no typography, no logos, no UI, no frame, no watermark. This is a standalone production website asset.

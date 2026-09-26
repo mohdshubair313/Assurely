@@ -1,0 +1,24 @@
+{
+  "id": "case_04_conflicting_sources",
+  "category": "conflicting_sources",
+  "description": "Conflict between primary policy document (36 mo) and third-party blog (24 mo)",
+  "input": {
+    "policy": "HDFC ERGO Optima Secure",
+    "question": "What is the pre-existing disease waiting period?",
+    "conflicting_context": [
+      {
+        "source": "Aggregator blog",
+        "claim": "HDFC Optima Secure covers pre-existing diseases after 24 months"
+      },
+      {
+        "source": "HDFC ERGO Optima Secure Policy Wordings 2024",
+        "claim": "Waiting period for pre-existing disease is 36 months (1095 days)"
+      }
+    ]
+  },
+  "expected": {
+    "authoritative_waiting_period_days": 1095,
+    "conflict_resolution_rule": "Deterministic policy_terms table supersedes third-party summaries",
+    "prohibited_words": ["best", "top", "rank", "ranking"]
+  }
+}

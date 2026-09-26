@@ -1,0 +1,16 @@
+{
+  "id": "case_05_outdated_policy",
+  "category": "outdated_policies",
+  "description": "Policy version with expired validity date must not be served as active terms",
+  "input": {
+    "policy_document_id": "99999999-9999-9999-9999-999999999999",
+    "product_name": "Health Companion 2021",
+    "expiry_date": "2023-12-31",
+    "query_date": "2026-09-21"
+  },
+  "expected": {
+    "is_active": false,
+    "staleness_status": "expired",
+    "action": "Exclude from active comparison; alert user if specifically requested"
+  }
+}

@@ -1,0 +1,75 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "insurance-advisor-backend"
+version = "0.1.0"
+description = "Multi-agent insurance advisory platform (India) — backend service"
+requires-python = ">=3.11"
+
+dependencies = [
+    # Web framework
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.34.0",
+    "python-multipart>=0.0.18",
+
+    # Database
+    "sqlalchemy[asyncio]>=2.0.36",
+    "asyncpg>=0.30.0",
+    "alembic>=1.14.0",
+
+    # Cache
+    "redis[hiredis]>=5.2.0",
+
+    # LangGraph orchestration
+    "langgraph>=0.4.0",
+    "langchain-core>=0.3.0",
+
+    # Vector DB
+    "chromadb>=0.6.0",
+
+    # LLM providers
+    "httpx>=0.28.0",
+
+    # Validation & settings
+    "pydantic>=2.10.0",
+    "pydantic-settings>=2.7.0",
+
+    # Observability
+    "langfuse>=3.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3.0",
+    "pytest-asyncio>=0.24.0",
+    "pytest-cov>=6.0.0",
+    "ruff>=0.8.0",
+    "mypy>=1.13.0",
+]
+
+eval = [
+    "ragas>=0.2.0",
+    "deepeval>=2.0.0",
+]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP", "B", "SIM"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*", "eval*"]
+

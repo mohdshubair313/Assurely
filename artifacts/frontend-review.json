@@ -1,0 +1,71 @@
+{
+  "screenshots": [
+    {
+      "file": "2026-09-26-01-landing-light.png",
+      "url": "http://localhost:3000/",
+      "captured_at": "2026-09-26T15:12:53.090Z",
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      },
+      "documentWidth": 1280,
+      "theme": "light",
+      "images": [
+        {
+          "src": "http://localhost:3000/_next/image?url=%2Fimages%2Fhouse-clouds-3d.png&w=750&q=75",
+          "width": 704,
+          "height": 527
+        }
+      ]
+    },
+    {
+      "file": "2026-09-26-02-comparison-light.png",
+      "url": "http://localhost:3000/comparison",
+      "captured_at": "2026-09-26T15:12:54.558Z",
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      },
+      "documentWidth": 1280,
+      "theme": "light",
+      "images": []
+    },
+    {
+      "file": "2026-09-26-03-comparison-dark.png",
+      "url": "http://localhost:3000/comparison",
+      "captured_at": "2026-09-26T15:12:55.163Z",
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      },
+      "documentWidth": 1280,
+      "theme": "dark",
+      "images": []
+    },
+    {
+      "file": "2026-09-26-04-landing-mobile.png",
+      "url": "http://localhost:3000/",
+      "captured_at": "2026-09-26T15:12:57.940Z",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "documentWidth": 390,
+      "theme": "light",
+      "images": [
+        {
+          "src": "http://localhost:3000/_next/image?url=%2Fimages%2Fhouse-clouds-3d.png&w=640&q=75",
+          "width": 390,
+          "height": 292
+        }
+      ]
+    }
+  ],
+  "runtime_errors": [],
+  "checks": [
+    "No document-level horizontal overflow",
+    "Theme toggles and survives reload",
+    "Policy detail selection updates clause card",
+    "Claim checker explicitly reports unverified preview"
+  ]
+}

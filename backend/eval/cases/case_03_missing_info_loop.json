@@ -1,0 +1,14 @@
+{
+  "id": "case_03_missing_info_loop",
+  "category": "missing_information",
+  "description": "User requests health cover without specifying age or city tier",
+  "input": {
+    "user_message": "I need health insurance for 2 people.",
+    "target_language": "en"
+  },
+  "expected": {
+    "missing_fields_contains": ["age", "city_tier"],
+    "requires_followup_question": true,
+    "prohibited_words": ["best", "top", "rank", "ranking"]
+  }
+}

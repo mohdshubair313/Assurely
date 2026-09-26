@@ -1,0 +1,91 @@
+# docker-compose.yml
+# Wires the Phase 0 skeleton: FastAPI backend, Postgres, Redis, and Chroma.
+# Per master roadmap: start as a single docker-compose stack; split agent-runtime
+# into its own scalable service once traffic justifies it.
+
+services:
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: insurance-api
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://insurance:insurance_dev@postgres:5432/insurance_db
+      - REDIS_URL=redis://redis:6379/0
+      - CHROMA_HOST=chroma
+      - CHROMA_PORT=8000
+      - ENVIRONMENT=development
+      - LOG_LEVEL=debug
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      chroma:
+        condition: service_started
+    volumes:
+      - ./backend/app:/app/app
+    networks:
+      - insurance-net
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: insurance-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: insurance
+      POSTGRES_PASSWORD: insurance_dev
+      POSTGRES_DB: insurance_db
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U insurance -d insurance_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - insurance-net
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: insurance-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - insurance-net
+    restart: unless-stopped
+
+  chroma:
+    image: chromadb/chroma:0.6.3
+    container_name: insurance-chroma
+    ports:
+      - "8100:8000"
+    volumes:
+      - chroma-data:/chroma/chroma
+    environment:
+      - IS_PERSISTENT=TRUE
+      - ANONYMIZED_TELEMETRY=FALSE
+    networks:
+      - insurance-net
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
+  redis-data:
+  chroma-data:
+
+networks:
+  insurance-net:
+    driver: bridge

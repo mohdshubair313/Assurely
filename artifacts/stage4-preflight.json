@@ -1,0 +1,98 @@
+{
+  "executed_at": "2026-09-26T15:11:38.521104+00:00",
+  "case": "Incomplete profile, missing policy fields, explicit conflicting evidence",
+  "synthetic_fixture": true,
+  "profile": {
+    "age": 30
+  },
+  "draft": {
+    "need_fit_view": [
+      {
+        "product_name": "Synthetic incomplete policy",
+        "eligible": true,
+        "sum_insured_range_inr": {
+          "min": 500000,
+          "max": 10000000
+        }
+      }
+    ],
+    "cited_facts": [
+      {
+        "claim": "Synthetic policy waiting period is 24 months",
+        "source": "Synthetic source A",
+        "conflict": true
+      },
+      {
+        "claim": "Synthetic policy waiting period is 36 months",
+        "source": "Synthetic source B",
+        "conflict": true
+      }
+    ]
+  },
+  "formula_without_compliance_violations": 0.46,
+  "guardrail_result": {
+    "approved": false,
+    "escalation": true,
+    "escalation_reason": "Compliance violations detected: Policy 'Synthetic incomplete policy' sum_insured_range_inr missing 'source'",
+    "guardrail_notes": [
+      "PASSED text compliance check: no prohibited ranking words or unlicensed advice.",
+      "FAILED provenance check (AGENTS.md rule 6): 6 item(s) missing source or date. Detail: Policy 'Synthetic incomplete policy' sum_insured_range_inr missing 'source'; Policy 'Synthetic incomplete policy' sum_insured_range_inr missing 'last_verified'; Policy 'Synthetic incomplete policy' entry_age_window is not a structured dict",
+      "PASSED numeric sanity check: all policy ranges and waiting periods are within valid bounds.",
+      "Confidence score calculated: 0.00",
+      "STATUS: Disapproved (6 compliance violations).",
+      "ESCALATION TRIGGERED: Compliance violations detected: Policy 'Synthetic incomplete policy' sum_insured_range_inr missing 'source'"
+    ]
+  },
+  "sourced_but_incomplete_draft": {
+    "need_fit_view": [
+      {
+        "product_name": "Synthetic incomplete policy",
+        "eligible": true,
+        "sum_insured_range_inr": {
+          "min": 500000,
+          "max": 10000000,
+          "source": "Synthetic test fixture",
+          "last_verified": "2026-09-25"
+        },
+        "entry_age_window": {
+          "source": "Synthetic test fixture",
+          "last_verified": "2026-09-25"
+        },
+        "waiting_period_days_preexisting": {
+          "source": "Synthetic test fixture",
+          "last_verified": "2026-09-25"
+        }
+      }
+    ],
+    "cited_facts": [
+      {
+        "claim": "Synthetic policy waiting period is 24 months",
+        "source": "Synthetic source A",
+        "conflict": true,
+        "last_verified": "2026-09-25"
+      },
+      {
+        "claim": "Synthetic policy waiting period is 36 months",
+        "source": "Synthetic source B",
+        "conflict": true,
+        "last_verified": "2026-09-25"
+      }
+    ]
+  },
+  "sourced_but_incomplete_guardrail_result": {
+    "approved": true,
+    "escalation": true,
+    "escalation_reason": "Low confidence score (0.46 < 0.7); human advisor validation required before delivery.",
+    "guardrail_notes": [
+      "PASSED text compliance check: no prohibited ranking words or unlicensed advice.",
+      "PASSED provenance check: all policy terms, facts, and hidden clauses carry verified sources.",
+      "PASSED numeric sanity check: all policy ranges and waiting periods are within valid bounds.",
+      "Confidence score calculated: 0.46",
+      "STATUS: Approved for explanation generation.",
+      "ESCALATION TRIGGERED: Low confidence score (0.46 < 0.7); human advisor validation required before delivery."
+    ]
+  },
+  "complete_profile_and_terms_with_conflict_score": 0.88,
+  "complete_consistent_control_score": 1.0,
+  "limitation": "Heuristic only. Explicit conflict flag is supplied by this fixture; this does not prove automatic contradiction detection."
+}

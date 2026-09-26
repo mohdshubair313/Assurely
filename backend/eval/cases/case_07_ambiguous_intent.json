@@ -1,0 +1,14 @@
+{
+  "id": "case_07_ambiguous_intent",
+  "category": "ambiguous_questions",
+  "description": "User asks for general protection without specifying life vs health insurance",
+  "input": {
+    "user_message": "I want full financial protection for my family.",
+    "target_language": "en"
+  },
+  "expected": {
+    "intent": "unclear",
+    "clarification_prompt_contains": ["health", "life"],
+    "prohibited_words": ["best", "top", "rank", "ranking"]
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "id": "case_02_edge_entry_age_cap",
+  "category": "edge_cases",
+  "description": "68-year-old applying for health cover with 65-year entry age caps",
+  "input": {
+    "user_message": "I am 68 years old living in Delhi. Looking for comprehensive health insurance.",
+    "target_language": "en"
+  },
+  "expected": {
+    "extracted_profile": {
+      "age": 68,
+      "city_tier": "tier_1"
+    },
+    "eligibility_check": {
+      "hdfc_optima_secure_eligible": false,
+      "care_supreme_eligible": true,
+      "reason": "HDFC Optima Secure entry age cap is 65; Care Supreme allows up to 99"
+    },
+    "prohibited_words": ["best", "top", "rank", "ranking"]
+  }
+}

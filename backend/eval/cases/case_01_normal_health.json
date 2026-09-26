@@ -1,0 +1,20 @@
+{
+  "id": "case_01_normal_health",
+  "category": "normal_cases",
+  "description": "Healthy 30-year-old in Bengaluru, wants health cover for self and spouse",
+  "input": {
+    "user_message": "I am 30 years old living in Bengaluru with my spouse, no pre-existing diseases. Looking for health insurance.",
+    "target_language": "en"
+  },
+  "expected": {
+    "extracted_profile": {
+      "age": 30,
+      "city_tier": "tier_1",
+      "dependents": 1,
+      "pre_existing_conditions": false
+    },
+    "missing_fields": [],
+    "recommended_cover_min_inr": 1000000,
+    "prohibited_words": ["best", "top", "rank", "ranking"]
+  }
+}

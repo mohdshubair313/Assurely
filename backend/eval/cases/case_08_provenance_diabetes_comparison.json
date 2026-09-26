@@ -1,0 +1,26 @@
+{
+  "id": "case_08_provenance_diabetes_comparison",
+  "category": "full_provenance",
+  "description": "54-year-old with type-2 diabetes in Delhi comparing HDFC Optima Secure vs Care Supreme",
+  "input": {
+    "user_message": "I am 54 years old living in Delhi with type-2 diabetes. Compare HDFC Optima Secure and Care Supreme for pre-existing disease waiting period and exclusions.",
+    "target_language": "en"
+  },
+  "expected": {
+    "profile": {
+      "age": 54,
+      "city_tier": "tier_1",
+      "pre_existing_conditions": true
+    },
+    "deterministic_terms": {
+      "hdfc_waiting_period_days": 1095,
+      "care_waiting_period_days": 1095
+    },
+    "provenance_requirements": {
+      "sources_per_claim_present": true,
+      "last_verified_date_present": true,
+      "no_ranking_language": true
+    },
+    "prohibited_words": ["best", "top", "rank", "ranking"]
+  }
+}
