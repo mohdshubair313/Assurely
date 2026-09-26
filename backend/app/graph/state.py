@@ -21,6 +21,8 @@ Fields:
     approved            — set by guardrail; explanation_report only ships if True
     escalation          — whether human advisor review is required
     escalation_reason   — why escalation was triggered
+    delivery_hold       — fail-closed API delivery gate, written by escalate
+    advisor_notification — queue receipt; acknowledgement is not advisor sign-off
     output              — written ONLY by explanation_report, never by guardrail
     target_language     — detected on first turn: "hi", "en", or "hi-en-mixed"
 """
@@ -48,6 +50,8 @@ class SessionState(TypedDict, total=False):
     approved: bool
     escalation: bool
     escalation_reason: str | None
+    delivery_hold: bool
+    advisor_notification: dict[str, Any]
     output: dict[str, Any]
     target_language: str
 
@@ -79,6 +83,8 @@ def create_initial_state(
         approved=False,
         escalation=False,
         escalation_reason=None,
+        delivery_hold=True,
+        advisor_notification={},
         output={},
         target_language=target_language,
     )

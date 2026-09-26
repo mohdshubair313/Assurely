@@ -14,7 +14,7 @@ All secrets are read from environment variables or a .env file.
 No defaults for secrets in production.
 """
 
-from pydantic import Field
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings
 
 
@@ -73,6 +73,13 @@ class Settings(BaseSettings):
     # ── Timeouts ────────────────────────────────────────────────────────
     llm_timeout_seconds: float = Field(default=30.0, description="LLM call timeout")
     llm_max_retries: int = Field(default=2, description="Max retries per provider before fallback")
+
+    # Advisor queue: unset until an operator configures an authorized receiver.
+    advisor_webhook_url: str = ""
+    advisor_webhook_token: SecretStr = SecretStr("")
+    advisor_webhook_timeout_seconds: float = Field(default=5.0, gt=0, le=30)
+    advisor_webhook_max_attempts: int = Field(default=3, ge=1, le=5)
+    advisor_webhook_retry_delay_seconds: float = Field(default=0.25, ge=0, le=5)
 
 
 def get_settings() -> Settings:

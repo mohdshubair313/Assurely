@@ -131,6 +131,40 @@ The honest framing matters here. "Score every trace and use it to improve the sy
 
 ---
 
+### 8.1 CAL-01: confidence calibration is a release requirement
+
+Track this task explicitly in PROGRESS.md alongside implementation of
+`backend/eval/rubric_scorer.py`. The existing 0.46 / 0.00 fixtures establish
+discrimination only; they do not establish real-world error probabilities.
+
+1. Define the target outcome and direction before fitting anything. The current
+   score increases with confidence. If calibrated as probability of correctness,
+   0.46 should correspond to approximately 46% correct outcomes and 54% errors;
+   if an error-risk score is wanted, define and version that separately. Report
+   both observed rates rather than silently assigning either interpretation.
+2. Use versioned decision traces, source-grounded rubric judgments and validated
+   feedback from § 7. Hide the confidence score from correctness judges; exclude
+   the confidence-consistency rubric item from the target labels. Audit a sample
+   with qualified human reviewers and resolve disagreements. Record which rubric
+   failures count as an erroneous recommendation, including severity.
+3. Expand beyond the eight synthetic starter cases to representative health-only
+   cases across § 3 categories. Group related profiles, paraphrases and policy
+   versions when splitting fitting and held-out evaluation data. Synthetic
+   corruption tests supplement this set; they cannot establish real-world rates.
+4. Produce reliability bins over the score range, including the region around
+   0.46, with counts, observed correctness/error rates and uncertainty intervals.
+   Report Brier score, expected calibration error and escalation precision/recall
+   at the existing 0.70 threshold, including sparse-bin limitations. Set sample
+   sufficiency and acceptance criteria before evaluating the holdout.
+5. Commit the labeled run manifest and calibration report. Review whether to
+   retain, recalibrate or remove the score/threshold before production reliance.
+   Re-run when rubric, policies, prompts, model or scoring weights change. A judge
+   result alone is not verified truth; preserve its provenance and review status.
+
+Automatic contradiction detection is a separate pending task. Evaluating it must
+include unflagged contradictory inputs and measured false positives/negatives;
+preserving a fixture-supplied conflict flag does not complete that task.
+
 ## 9. Observability tooling
 
 Two real options, not equivalent for this project:

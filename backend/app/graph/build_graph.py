@@ -6,9 +6,9 @@ Builds the compiled LangGraph ``StateGraph`` that implements the pipeline:
   3. intent_router → sets intent ("health" | "life" | "unclear")
   4. Parallel fan-out: health_domain_agent + risk_analysis (Stage 2)
   5. compare_verify → fan-in / join (Stage 3, deterministic DB lookups)
-  6. guardrail → sets approved / escalation (Stage 4)  [next session]
-  7. explanation_report → writes output (Stage 5)       [next session]
-  8. Conditional: escalate (holds delivery)
+  6. guardrail → sets approved / escalation (Stage 4)
+  7. escalate → notification and delivery hold → END (current interim graph)
+  Later: insert explanation_report unconditionally before escalate (Stage 5).
   9. Conditional: persist_memory (on session end)
 
 Every routing decision is a plain conditional edge over explicit state fields
@@ -25,6 +25,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
 from app.graph.nodes.compare_verify import compare_verify_node
+from app.graph.nodes.escalate import escalate_node
 from app.graph.nodes.guardrail import guardrail_node
 from app.graph.nodes.health_domain_agent import health_domain_agent_node
 from app.graph.nodes.intent_router import intent_router_node
@@ -75,8 +76,8 @@ def build_graph(
     (health_domain_agent, risk_analysis), and Stage 3 fan-in (compare_verify)
     with deterministic conditional edges.
 
-    Stages 4 (guardrail) and 5 (explanation_report) are wired in the next
-    session per the one-node-per-session pacing rule (PROGRESS.md).
+    Stage 4 is followed by escalate for delivery control. Stage 5 is still
+    deferred; it must later run unconditionally between guardrail and escalate.
     """
     builder: StateGraph[Any, Any, Any, Any] = StateGraph(cast(Any, SessionState))
 
@@ -87,6 +88,7 @@ def build_graph(
     builder.add_node("risk_analysis", risk_analysis_node)
     builder.add_node("compare_verify", compare_verify_node)  # Stage 3 fan-in
     builder.add_node("guardrail", guardrail_node)            # Stage 4 compliance check
+    builder.add_node("escalate", escalate_node)
 
     # 2. Wire entry point
     builder.add_edge(START, "needs_intake")
@@ -120,8 +122,10 @@ def build_graph(
     # 6. Stage 3 -> Stage 4 guardrail (compliance & disclosure check)
     builder.add_edge("compare_verify", "guardrail")
 
-    # 7. Stage 4 complete -> END (explanation_report wired next session)
-    builder.add_edge("guardrail", END)
+    # Interim delivery gate. Later insert explanation_report on this edge,
+    # unconditionally: escalation must never skip report generation.
+    builder.add_edge("guardrail", "escalate")
+    builder.add_edge("escalate", END)
 
     memory = checkpointer or MemorySaver()
     return builder.compile(checkpointer=memory)

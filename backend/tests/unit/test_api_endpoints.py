@@ -77,6 +77,9 @@ def test_post_message_endpoint() -> None:
         data = response.json()
         assert data["session_id"] == "test-sess-999"
         assert "calculator_outputs" in data
-        assert "health_cover_sizing" in data["calculator_outputs"]
+        assert data["calculator_outputs"] == {}
         assert data["escalation"] is True
-        assert data["guardrail_notes"]
+        assert data["delivery_hold"] is True
+        assert data["guardrail_notes"] == []
+        assert data["draft_output"] == {}
+        assert data["output"] == {}
