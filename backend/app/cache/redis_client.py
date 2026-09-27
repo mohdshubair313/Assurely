@@ -13,6 +13,7 @@ Connection is async via ``redis.asyncio``.
 from __future__ import annotations
 
 import logging
+from contextlib import suppress
 from typing import Any
 
 from app.core.config import get_settings
@@ -49,8 +50,6 @@ async def close_redis_client() -> None:
     """Close the active Redis connection pool."""
     global _redis_client
     if _redis_client is not None:
-        try:
-            await _redis_client.close()
-        except Exception:
-            pass
+        with suppress(Exception):
+            await _redis_client.aclose()
         _redis_client = None

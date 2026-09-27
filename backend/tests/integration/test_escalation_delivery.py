@@ -6,7 +6,7 @@ from eval.escalation_preflight import run_preflight
 
 
 @pytest.mark.asyncio
-async def test_notification_commit_retry_concurrency_and_api_hold():
+async def test_notification_commit_retry_concurrency_and_api_hold() -> None:
     report = await run_preflight()
     assert report["http_requests"] == 4  # One retry and two lost-checkpoint replays.
     assert report["unique_queued_events"] == 1

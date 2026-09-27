@@ -72,5 +72,7 @@ def calculate_health_cover_sizing(
         "gross_recommended_sum_insured_inr": gross_cover,
         "existing_coverage_inr": existing_coverage,
         "net_recommended_sum_insured_inr": net_recommended_cover,
-        "formula": "((base_cover + dependents * 2.5L) * age_multiplier) + ped_buffer - existing_cover",
+        "formula": (
+            "((base_cover + dependents * 2.5L) * age_multiplier) + ped_buffer - existing_cover"
+        ),
     }

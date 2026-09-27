@@ -1,0 +1,33 @@
+{
+  "executed_at": "2026-09-27T04:54:43.918347+00:00",
+  "receiver": "LOCAL TEST PLACEHOLDER ONLY; no external advisor destination",
+  "transport": "real HTTP over loopback, SQLite commit before acknowledgement",
+  "http_requests": 4,
+  "unique_queued_events": 1,
+  "notification": {
+    "event_id": "advisor-1376bc3301edf3885a59590194d2ae406958223033abee7619b47dd5280f137f",
+    "status": "queued",
+    "attempts": 2,
+    "destination_id": "ab3dea86eef9df62c4c6b18573b4146b6896f1b0dfd9a91a3862c23d27e4383d"
+  },
+  "graph_output_unchanged": true,
+  "delivery_hold_after_queue_ack": true,
+  "public_response": {
+    "session_id": "synthetic-escalation-preflight",
+    "reply": "Your report is held for advisor review. It has not been released.",
+    "citations": [],
+    "escalation": true,
+    "escalation_reason": "Advisor review is required before delivery.",
+    "missing_fields": [],
+    "calculator_outputs": {},
+    "draft_output": {},
+    "hidden_clauses": [],
+    "transparency_scores": {},
+    "approved": true,
+    "guardrail_notes": [],
+    "output": {},
+    "delivery_hold": true,
+    "notification_status": "queued"
+  },
+  "phase_2_task": "Configure and validate the actual advisor-queue destination"
+}

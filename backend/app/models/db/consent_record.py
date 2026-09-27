@@ -14,7 +14,7 @@ Users can revoke at any time via the /v1/consent endpoint.
 import uuid
 from datetime import datetime
 
-from sqlalchemy import String, DateTime, ForeignKey, text
+from sqlalchemy import DateTime, ForeignKey, Index, String, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -23,6 +23,15 @@ from app.models.db import Base
 
 class ConsentRecord(Base):
     __tablename__ = "consent_records"
+    __table_args__ = (
+        Index(
+            "uq_consent_records_active_scope",
+            "user_id",
+            "scope",
+            unique=True,
+            postgresql_where=text("revoked_at IS NULL"),
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
@@ -34,6 +43,4 @@ class ConsentRecord(Base):
     granted_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=text("now()")
     )
-    revoked_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

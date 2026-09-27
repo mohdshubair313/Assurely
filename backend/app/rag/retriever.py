@@ -37,8 +37,11 @@ def retrieve_health_facts(query: str, top_k: int = 3) -> list[dict[str, Any]]:
     sanitized: list[dict[str, Any]] = []
     for fact in facts:
         claim_text = str(fact.get("claim", "")).strip()
-        source_text = str(fact.get("source", "IRDAI Policy Filing")).strip()
-        last_verified = str(fact.get("last_verified", "2024-01-01")).strip()
+        # Unknown provenance must stay missing so the guardrail can reject it.
+        source_value = fact.get("source")
+        verified_value = fact.get("last_verified")
+        source_text = source_value.strip() if isinstance(source_value, str) else ""
+        last_verified = verified_value.strip() if isinstance(verified_value, str) else ""
         url = str(fact.get("url", "")).strip()
         retrieved_at = str(fact.get("retrieved_at", "")).strip()
 

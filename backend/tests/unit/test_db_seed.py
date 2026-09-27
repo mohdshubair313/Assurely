@@ -2,11 +2,10 @@
 
 from typing import Any, cast
 
-import pytest
 from app.db.seed import SEED_POLICIES
-from app.models.db.policy_terms import PolicyTerms
-from app.models.db.policy_document import PolicyDocument
 from app.models.db.audit_log import AuditLog
+from app.models.db.policy_document import PolicyDocument
+from app.models.db.policy_terms import PolicyTerms
 from app.models.db.session import Session
 from app.models.db.user import User
 

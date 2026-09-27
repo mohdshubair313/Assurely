@@ -15,7 +15,8 @@ from __future__ import annotations
 import functools
 import logging
 import time
-from typing import Any, Callable
+from collections.abc import Awaitable, Callable
+from typing import Any, ParamSpec, TypeVar
 
 from app.core.config import get_settings
 
@@ -25,7 +26,9 @@ logger = logging.getLogger(__name__)
 class RateLimitExceededError(Exception):
     """Raised when a session or the platform exceeds rate or token limits."""
 
-    def __init__(self, message: str, retry_after_seconds: int = 60, reason: str = "rate_limit_exceeded"):
+    def __init__(
+        self, message: str, retry_after_seconds: int = 60, reason: str = "rate_limit_exceeded"
+    ):
         super().__init__(message)
         self.retry_after_seconds = retry_after_seconds
         self.reason = reason
@@ -105,7 +108,6 @@ class RateLimiter:
             self._redis_available = False
         return None
 
-
     async def check_call_limit(self, session_id: str) -> None:
         """Check if session is within calls-per-minute limit."""
         if not session_id:
@@ -123,7 +125,9 @@ class RateLimiter:
                 if count == 1:
                     await redis.expire(key, 90)
                 if count > max_cpm:
-                    logger.warning("Rate limit exceeded for session %s: %d > %d", session_id, count, max_cpm)
+                    logger.warning(
+                        "Rate limit exceeded for session %s: %d > %d", session_id, count, max_cpm
+                    )
                     raise RateLimitExceededError(
                         f"Rate limit exceeded: max {max_cpm} calls per minute.",
                         retry_after_seconds=60 - (now % 60),
@@ -160,7 +164,12 @@ class RateLimiter:
                 # Keep session token counter for 24h
                 await redis.expire(key, 86400)
                 if total > max_tokens:
-                    logger.warning("Token budget exceeded for session %s: %d > %d", session_id, total, max_tokens)
+                    logger.warning(
+                        "Token budget exceeded for session %s: %d > %d",
+                        session_id,
+                        total,
+                        max_tokens,
+                    )
                     raise RateLimitExceededError(
                         f"Session token budget exhausted: {total} > {max_tokens}.",
                         retry_after_seconds=3600,
@@ -197,20 +206,29 @@ def get_rate_limiter() -> RateLimiter:
     return _global_rate_limiter
 
 
-def rate_limited(func: Callable) -> Callable:
+P = ParamSpec("P")
+R = TypeVar("R")
+
+
+def rate_limited(func: Callable[P, Awaitable[R]]) -> Callable[P, Awaitable[R]]:
     """Decorator for llm_call to enforce rate limiting by session_id."""
 
     @functools.wraps(func)
-    async def wrapper(*args: Any, **kwargs: Any) -> Any:
+    async def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
         session_id = kwargs.get("session_id")
         limiter = get_rate_limiter()
 
-        if session_id:
+        if isinstance(session_id, str) and session_id:
             await limiter.check_call_limit(session_id)
 
         result = await func(*args, **kwargs)
 
-        if session_id and hasattr(result, "total_tokens") and result.total_tokens:
+        if (
+            isinstance(session_id, str)
+            and session_id
+            and hasattr(result, "total_tokens")
+            and result.total_tokens
+        ):
             await limiter.record_tokens(session_id, result.total_tokens)
 
         return result

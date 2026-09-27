@@ -1,15 +1,15 @@
 """Unit tests for Stage 2 parallel fan-out: health_domain_agent + risk_analysis."""
 
-from typing import Any, cast
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from langchain_core.runnables import RunnableConfig
 
 from app.calculators.risk_profile import calculate_risk_profile
 from app.graph.build_graph import build_graph
 from app.graph.nodes.health_domain_agent import health_domain_agent_node
-from app.graph.nodes.risk_analysis import risk_analysis_node
-from app.graph.state import create_initial_state, SessionState
+from app.graph.state import create_initial_state
 from app.llm.providers import LLMResult
 
 
@@ -21,7 +21,7 @@ def _make_empty_db_session() -> MagicMock:
     conflicts in unit test environments.
     """
     mock_result = MagicMock()
-    mock_result.all.return_value = cast(list[Any], [])
+    mock_result.all.return_value = []
     mock_session = AsyncMock()
     mock_session.execute = AsyncMock(return_value=mock_result)
     mock_session.__aenter__ = AsyncMock(return_value=mock_session)
@@ -30,7 +30,7 @@ def _make_empty_db_session() -> MagicMock:
 
 
 def test_risk_profile_calculator_deterministic() -> None:
-    """Verify calculate_risk_profile produces deterministic arithmetic outputs (AGENTS.md rule 5)."""
+    """Verify risk profile arithmetic is deterministic (AGENTS.md rule 5)."""
     profile_metro_ped = {
         "age": 35,
         "city_tier": "tier_1",
@@ -55,8 +55,10 @@ def test_risk_profile_calculator_deterministic() -> None:
 
 @pytest.mark.asyncio
 async def test_health_domain_agent_retrieval() -> None:
-    """Verify health_domain_agent populates retrieved_facts with valid citations (AGENTS.md rule 6)."""
-    state = create_initial_state(session_id="test-health-domain", user_message="I need family health insurance")
+    """Verify health_domain_agent adds valid citations to retrieved_facts (AGENTS.md rule 6)."""
+    state = create_initial_state(
+        session_id="test-health-domain", user_message="I need family health insurance"
+    )
     state["intent"] = "health"
     state["user_profile"] = {
         "age": 32,
@@ -90,14 +92,18 @@ async def test_stage2_parallel_fanout_execution() -> None:
     AsyncSessionLocal is mocked with empty results so compare_verify completes
     without a real DB connection (avoids asyncpg event-loop conflicts in unit tests).
     """
-    graph = build_graph()
-
     initial_state = create_initial_state(
         session_id="fanout-test-session",
-        user_message="I am 34 years old living in Mumbai with 1 child, healthy, looking for medical insurance.",
+        user_message=(
+            "I am 34 years old living in Mumbai with 1 child, healthy, "
+            "looking for medical insurance."
+        ),
     )
 
-    intake_json = '{"age": 34, "city_tier": "tier_1", "dependents": 1, "pre_existing_conditions": false, "existing_coverage": 0}'
+    intake_json = (
+        '{"age": 34, "city_tier": "tier_1", "dependents": 1, '
+        '"pre_existing_conditions": false, "existing_coverage": 0}'
+    )
     router_json = '{"intent": "health", "confidence": 0.99}'
 
     async def mock_llm_call(*args: Any, **kwargs: Any) -> LLMResult:
@@ -112,11 +118,17 @@ async def test_stage2_parallel_fanout_execution() -> None:
 
     mock_session = _make_empty_db_session()
 
-    with patch("app.graph.nodes.needs_intake.llm_call", side_effect=mock_llm_call), \
-         patch("app.graph.nodes.intent_router.llm_call", side_effect=mock_llm_call), \
-         patch("app.graph.nodes.compare_verify.AsyncSessionLocal", return_value=mock_session):
-
-        config = {"configurable": {"thread_id": "fanout-test-session"}}
+    with (
+        patch("app.graph.nodes.needs_intake.llm_call", side_effect=mock_llm_call),
+        patch("app.graph.nodes.intent_router.llm_call", side_effect=mock_llm_call),
+        patch("app.graph.nodes.compare_verify.AsyncSessionLocal", return_value=mock_session),
+        patch(
+            "app.graph.build_graph.persist_memory_node",
+            new=AsyncMock(return_value={"decision_trace_persisted": True}),
+        ),
+    ):
+        graph = build_graph()
+        config: RunnableConfig = {"configurable": {"thread_id": "fanout-test-session"}}
         final_state = await graph.ainvoke(initial_state, config=config)
 
         # 1. Profile and intent completed

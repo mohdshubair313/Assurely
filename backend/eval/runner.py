@@ -28,7 +28,7 @@ def load_eval_cases() -> list[dict[str, Any]]:
     cases = []
     for file_path in sorted(CASES_DIR.glob("*.json")):
         try:
-            with open(file_path, "r", encoding="utf-8") as f:
+            with open(file_path, encoding="utf-8") as f:
                 data = json.load(f)
                 data["_file"] = file_path.name
                 cases.append(data)
@@ -53,13 +53,11 @@ def run_eval_case(case: dict[str, Any]) -> dict[str, Any]:
     case_id = case.get("id", "unknown")
     category = case.get("category", "general")
     expected = case.get("expected", {})
-    case_input = case.get("input", {})
 
     passed = True
     reasons = []
 
     # 1. Prohibited words check (AGENTS.md rule 1)
-    user_msg = case_input.get("user_message", "")
     prohibited = expected.get("prohibited_words", PROHIBITED_WORDS)
     # Check that expected prohibits ranking words
     for word in prohibited:
@@ -138,7 +136,10 @@ def main() -> int:
             print(f"[{status}] {res['case_id']:<35} ({res['category']}) -> {res['reasons']}")
 
     print("=" * 60)
-    print(f"Summary: {passed_count}/{len(cases)} cases passing ({passed_count/len(cases)*100:.0f}%)\n")
+    print(
+        f"Summary: {passed_count}/{len(cases)} cases passing "
+        f"({passed_count / len(cases) * 100:.0f}%)\n"
+    )
     return 0 if passed_count == len(cases) else 1
 
 

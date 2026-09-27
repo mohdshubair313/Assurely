@@ -1,12 +1,14 @@
 """Unit tests for intent_router node and deterministic routing."""
 
-import pytest
-from typing import Any, cast
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+from langchain_core.runnables import RunnableConfig
 
 from app.graph.build_graph import build_graph, route_after_intent
 from app.graph.nodes.intent_router import _rule_based_classify_intent, intent_router_node
-from app.graph.state import create_initial_state, SessionState
+from app.graph.state import SessionState, create_initial_state
 from app.llm.providers import LLMResult
 
 
@@ -17,7 +19,7 @@ def _make_empty_db_session() -> MagicMock:
     integration tests that don't need to exercise Stage 3 DB behaviour.
     """
     mock_result = MagicMock()
-    mock_result.all.return_value = cast(list[Any], [])
+    mock_result.all.return_value = []
     mock_session = AsyncMock()
     mock_session.execute = AsyncMock(return_value=mock_result)
     mock_session.__aenter__ = AsyncMock(return_value=mock_session)
@@ -30,7 +32,9 @@ def test_rule_based_intent_classification() -> None:
     health_msgs = [{"role": "user", "content": "I want medical insurance for hospital bills"}]
     assert _rule_based_classify_intent(health_msgs) == "health"
 
-    life_msgs = [{"role": "user", "content": "Looking for pure term life insurance for death cover"}]
+    life_msgs = [
+        {"role": "user", "content": "Looking for pure term life insurance for death cover"}
+    ]
     assert _rule_based_classify_intent(life_msgs) == "life"
 
     unclear_msgs = [{"role": "user", "content": "I want some general protection"}]
@@ -76,14 +80,17 @@ async def test_graph_executes_intake_to_intent_router() -> None:
     AsyncSessionLocal is mocked to avoid asyncpg event-loop conflicts when
     the full graph routes through compare_verify (Stage 3) after health intent.
     """
-    graph = build_graph()
-
     initial_state = create_initial_state(
         session_id="complete-flow-sess",
-        user_message="I am 30 years old living in Bengaluru with my wife, healthy, need health insurance.",
+        user_message=(
+            "I am 30 years old living in Bengaluru with my wife, healthy, need health insurance."
+        ),
     )
 
-    intake_json = '{"age": 30, "city_tier": "tier_1", "dependents": 1, "pre_existing_conditions": false, "existing_coverage": 0}'
+    intake_json = (
+        '{"age": 30, "city_tier": "tier_1", "dependents": 1, '
+        '"pre_existing_conditions": false, "existing_coverage": 0}'
+    )
     router_json = '{"intent": "health", "confidence": 0.95}'
 
     async def mock_llm_call(*args: Any, **kwargs: Any) -> LLMResult:
@@ -98,11 +105,17 @@ async def test_graph_executes_intake_to_intent_router() -> None:
 
     mock_session = _make_empty_db_session()
 
-    with patch("app.graph.nodes.needs_intake.llm_call", side_effect=mock_llm_call), \
-         patch("app.graph.nodes.intent_router.llm_call", side_effect=mock_llm_call), \
-         patch("app.graph.nodes.compare_verify.AsyncSessionLocal", return_value=mock_session):
-
-        config = {"configurable": {"thread_id": "complete-flow-sess"}}
+    with (
+        patch(
+            "app.graph.build_graph.persist_memory_node",
+            new=AsyncMock(return_value={"decision_trace_persisted": True}),
+        ),
+        patch("app.graph.nodes.needs_intake.llm_call", side_effect=mock_llm_call),
+        patch("app.graph.nodes.intent_router.llm_call", side_effect=mock_llm_call),
+        patch("app.graph.nodes.compare_verify.AsyncSessionLocal", return_value=mock_session),
+    ):
+        graph = build_graph()
+        config: RunnableConfig = {"configurable": {"thread_id": "complete-flow-sess"}}
         final_state = await graph.ainvoke(initial_state, config=config)
 
         # Profile complete

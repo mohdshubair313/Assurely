@@ -20,8 +20,9 @@ feeds the Human Advisor Escalation rule directly.
 from __future__ import annotations
 
 import logging
+import math
 import re
-from typing import Any
+from typing import Any, TypeGuard
 
 from app.graph.state import SessionState
 
@@ -66,6 +67,7 @@ MIN_CONFIDENCE_THRESHOLD: float = 0.70
 
 # ── Compliance Checkers ───────────────────────────────────────────────────────
 
+
 def check_ranking_language(text: str) -> list[str]:
     """Scan text for prohibited ranking words using word boundaries.
 
@@ -74,7 +76,7 @@ def check_ranking_language(text: str) -> list[str]:
     violations: list[str] = []
     text_lower = text.lower()
     for word in PROHIBITED_RANKING_WORDS:
-        pattern = r"\b" + re.escape(word) + r"\b"
+        pattern = r"(?<!\w)" + re.escape(word) + r"(?!\w)"
         if re.search(pattern, text_lower):
             violations.append(f"Prohibited ranking word detected: '{word}'")
     return violations
@@ -96,7 +98,11 @@ def _scan_text_fields(obj: Any, path: str = "") -> list[str]:
     if isinstance(obj, str):
         # Exclude internal metadata/debug keys or raw URLs:
         # compliance_note is internal metadata quoting the rule itself
-        if not path.endswith("_hash") and not path.endswith("url") and not path.endswith("compliance_note"):
+        if (
+            not path.endswith("_hash")
+            and not path.endswith("url")
+            and not path.endswith("compliance_note")
+        ):
             ranking_violations = check_ranking_language(obj)
             for v in ranking_violations:
                 violations.append(f"[{path}] {v}")
@@ -168,9 +174,21 @@ def check_provenance_and_citations(
             if not clause.get("source"):
                 violations.append(f"Hidden clause [{idx}] in '{policy_key}' missing 'source'")
             if not clause.get("last_verified"):
-                violations.append(f"Hidden clause [{idx}] in '{policy_key}' missing 'last_verified'")
+                violations.append(
+                    f"Hidden clause [{idx}] in '{policy_key}' missing 'last_verified'"
+                )
 
     return violations
+
+
+def _structured_term(policy: dict[str, Any], key: str) -> dict[str, Any]:
+    """Return only a term object; provenance checks report invalid containers."""
+    value = policy.get(key)
+    return value if isinstance(value, dict) else {}
+
+
+def _finite_number(value: Any) -> TypeGuard[int | float]:
+    return type(value) is int or (type(value) is float and math.isfinite(value))
 
 
 def check_numeric_hallucinations(draft_output: dict[str, Any]) -> list[str]:
@@ -186,28 +204,41 @@ def check_numeric_hallucinations(draft_output: dict[str, Any]) -> list[str]:
         p_name = policy.get("product_name", f"policy_{idx}")
 
         # Sum insured range
-        si_range = policy.get("sum_insured_range_inr", {})
-        si_min = si_range.get("min", 0)
-        si_max = si_range.get("max", 0)
-        if si_min < 0 or si_max < 0:
-            violations.append(f"Policy '{p_name}' sum insured range cannot be negative")
-        if si_max > 0 and si_min > si_max:
-            violations.append(f"Policy '{p_name}' min sum insured ({si_min}) exceeds max ({si_max})")
-
-        # Entry age window
-        age_window = policy.get("entry_age_window", {})
+        si_range = _structured_term(policy, "sum_insured_range_inr")
+        si_min = si_range.get("min")
+        si_max = si_range.get("max")
+        age_window = _structured_term(policy, "entry_age_window")
         age_min = age_window.get("min")
         age_max = age_window.get("max")
-        if age_min is not None and age_max is not None:
-            if age_min < 0 or age_max < 0:
-                violations.append(f"Policy '{p_name}' entry age cannot be negative")
-            if age_min > age_max:
-                violations.append(f"Policy '{p_name}' min entry age ({age_min}) exceeds max ({age_max})")
+        wp = _structured_term(policy, "waiting_period_days_preexisting")
+        wp_val = wp.get("value")
+        for label, value in (
+            ("minimum sum insured", si_min),
+            ("maximum sum insured", si_max),
+            ("minimum entry age", age_min),
+            ("maximum entry age", age_max),
+            ("waiting period", wp_val),
+        ):
+            if value is not None and not _finite_number(value):
+                violations.append(f"Policy '{p_name}' {label} must be a finite number")
+
+        if any(_finite_number(value) and value < 0 for value in (si_min, si_max)):
+            violations.append(f"Policy '{p_name}' sum insured range cannot be negative")
+        if _finite_number(si_min) and _finite_number(si_max) and si_max > 0 and si_min > si_max:
+            violations.append(
+                f"Policy '{p_name}' min sum insured ({si_min}) exceeds max ({si_max})"
+            )
+
+        # Entry age window
+        if any(_finite_number(value) and value < 0 for value in (age_min, age_max)):
+            violations.append(f"Policy '{p_name}' entry age cannot be negative")
+        if _finite_number(age_min) and _finite_number(age_max) and age_min > age_max:
+            violations.append(
+                f"Policy '{p_name}' min entry age ({age_min}) exceeds max ({age_max})"
+            )
 
         # Waiting period
-        wp = policy.get("waiting_period_days_preexisting", {})
-        wp_val = wp.get("value")
-        if wp_val is not None and wp_val < 0:
+        if _finite_number(wp_val) and wp_val < 0:
             violations.append(f"Policy '{p_name}' waiting period cannot be negative ({wp_val})")
 
     return violations
@@ -227,10 +258,7 @@ def calculate_confidence_score(
       3. User profile completeness (age, city tier, dependents, PED declaration)
       4. Compliance and sanity violations
     """
-    if violations:
-        comp_score = max(0.0, 1.0 - 0.40 * len(violations))
-    else:
-        comp_score = 1.0
+    comp_score = max(0.0, 1.0 - 0.40 * len(violations)) if violations else 1.0
 
     policies = draft_output.get("need_fit_view", [])
     if not policies:
@@ -238,10 +266,16 @@ def calculate_confidence_score(
     else:
         policy_scores: list[float] = []
         for p in policies:
-            has_si = 1.0 if (p.get("sum_insured_range_inr") and p["sum_insured_range_inr"].get("max")) else 0.0
-            has_age = 1.0 if (p.get("entry_age_window") and p["entry_age_window"].get("max")) else 0.0
-            has_wp = 1.0 if (p.get("waiting_period_days_preexisting") and p["waiting_period_days_preexisting"].get("value") is not None) else 0.0
-            has_prem = 1.0 if (p.get("premium_estimate") and p["premium_estimate"].get("annual_premium_inr")) else 0.0
+            has_si = 1.0 if _structured_term(p, "sum_insured_range_inr").get("max") else 0.0
+            has_age = 1.0 if _structured_term(p, "entry_age_window").get("max") else 0.0
+            has_wp = (
+                1.0
+                if (_structured_term(p, "waiting_period_days_preexisting").get("value") is not None)
+                else 0.0
+            )
+            has_prem = (
+                1.0 if _structured_term(p, "premium_estimate").get("annual_premium_inr") else 0.0
+            )
             policy_scores.append((has_si + has_age + has_wp + has_prem) / 4.0)
         term_score = sum(policy_scores) / len(policy_scores)
 
@@ -255,9 +289,13 @@ def calculate_confidence_score(
 
     # User profile completeness (0.0 to 1.0)
     # An explicitly empty current profile must not borrow a stale snapshot.
-    profile = user_profile if user_profile is not None else draft_output.get("user_profile_snapshot", {})
+    profile = (
+        user_profile if user_profile is not None else draft_output.get("user_profile_snapshot", {})
+    )
     if profile:
-        has_age = 1.0 if (profile.get("age") is not None and int(profile.get("age", 0)) > 0) else 0.0
+        has_age = (
+            1.0 if (profile.get("age") is not None and int(profile.get("age", 0)) > 0) else 0.0
+        )
         has_city = 1.0 if profile.get("city_tier") in ("tier_1", "tier_2", "tier_3") else 0.0
         has_deps = 1.0 if profile.get("dependents") is not None else 0.0
         has_ped = 1.0 if profile.get("pre_existing_conditions") is not None else 0.0
@@ -271,6 +309,44 @@ def calculate_confidence_score(
         raw = term_score * 0.35 + retrieval_score * 0.25 + profile_score * 0.20 + comp_score * 0.20
 
     return round(max(0.0, min(1.0, raw)), 2)
+
+
+def _profile_completeness(profile: dict[str, Any]) -> float:
+    fields = (
+        profile.get("age") is not None and int(profile.get("age", 0)) > 0,
+        profile.get("city_tier") in ("tier_1", "tier_2", "tier_3"),
+        profile.get("dependents") is not None,
+        profile.get("pre_existing_conditions") is not None,
+    )
+    return sum(fields) / len(fields)
+
+
+def _retrieval_agreement(draft: dict[str, Any]) -> float:
+    facts = draft.get("cited_facts", [])
+    if not facts:
+        return 0.0
+    return 0.5 if any(f.get("conflict", False) for f in facts) else 1.0
+
+
+def _policy_term_completeness(draft: dict[str, Any]) -> float:
+    policies = draft.get("need_fit_view", [])
+    if not policies:
+        return 0.0
+    scores = []
+    for policy in policies:
+        scores.append(
+            sum(
+                (
+                    bool(_structured_term(policy, "sum_insured_range_inr").get("max")),
+                    bool(_structured_term(policy, "entry_age_window").get("max")),
+                    _structured_term(policy, "waiting_period_days_preexisting").get("value")
+                    is not None,
+                    bool(_structured_term(policy, "premium_estimate").get("annual_premium_inr")),
+                )
+            )
+            / 4.0
+        )
+    return sum(scores) / len(scores)
 
 
 def evaluate_escalation(
@@ -322,7 +398,14 @@ def evaluate_escalation(
     if isinstance(raw_nri, bool):
         is_nri = raw_nri
     elif isinstance(raw_nri, str):
-        is_nri = raw_nri.strip().lower() in ("true", "yes", "1", "nri", "non-resident", "non_resident")
+        is_nri = raw_nri.strip().lower() in (
+            "true",
+            "yes",
+            "1",
+            "nri",
+            "non-resident",
+            "non_resident",
+        )
 
     if is_nri:
         return (
@@ -338,14 +421,14 @@ def evaluate_escalation(
         return (
             True,
             f"High-stakes profile: applicant age ({user_age}) meets or exceeds senior "
-            f"threshold ({SENIOR_CITIZEN_AGE_THRESHOLD}+); requires specialized underwriting review.",
+            f"threshold ({SENIOR_CITIZEN_AGE_THRESHOLD}+); "
+            "requires specialized underwriting review.",
         )
 
     # 5. High sum insured (>= ₹1 Crore)
-    target_si = (
-        draft_output.get("risk_adjusted_target_si_inr", {}).get("value", 0)
-        or user_profile.get("target_sum_insured", 0)
-    )
+    target_si = draft_output.get("risk_adjusted_target_si_inr", {}).get(
+        "value", 0
+    ) or user_profile.get("target_sum_insured", 0)
     if target_si >= HIGH_VALUE_COVER_THRESHOLD_INR:
         return (
             True,
@@ -375,6 +458,7 @@ def evaluate_escalation(
 
 # ── Guardrail Node ────────────────────────────────────────────────────────────
 
+
 async def guardrail_node(state: SessionState) -> dict[str, Any]:
     """Execute Stage 4 compliance check and advisor escalation assessment.
 
@@ -400,29 +484,39 @@ async def guardrail_node(state: SessionState) -> dict[str, Any]:
             f"Detail: {'; '.join(text_violations[:3])}"
         )
     else:
-        guardrail_notes.append("PASSED text compliance check: no prohibited ranking words or unlicensed advice.")
+        guardrail_notes.append(
+            "PASSED text compliance check: no prohibited ranking words or unlicensed advice."
+        )
 
     # 2. Check provenance on all claims, terms, and citations (Rule 6)
     provenance_violations = check_provenance_and_citations(draft_output, hidden_clauses)
     if provenance_violations:
         all_violations.extend(provenance_violations)
         guardrail_notes.append(
-            f"FAILED provenance check (AGENTS.md rule 6): {len(provenance_violations)} item(s) missing source or date. "
+            f"FAILED provenance check (AGENTS.md rule 6): {len(provenance_violations)} item(s) "
+            "missing source or date. "
             f"Detail: {'; '.join(provenance_violations[:3])}"
         )
     else:
-        guardrail_notes.append("PASSED provenance check: all policy terms, facts, and hidden clauses carry verified sources.")
+        guardrail_notes.append(
+            "PASSED provenance check: all policy terms, facts, "
+            "and hidden clauses carry verified sources."
+        )
 
     # 3. Check deterministic numeric bounds (Rule 5)
     numeric_violations = check_numeric_hallucinations(draft_output)
     if numeric_violations:
         all_violations.extend(numeric_violations)
         guardrail_notes.append(
-            f"FAILED numeric sanity check (AGENTS.md rule 5): {len(numeric_violations)} issue(s) detected. "
+            f"FAILED numeric sanity check (AGENTS.md rule 5): {len(numeric_violations)} "
+            "issue(s) detected. "
             f"Detail: {'; '.join(numeric_violations[:2])}"
         )
     else:
-        guardrail_notes.append("PASSED numeric sanity check: all policy ranges and waiting periods are within valid bounds.")
+        guardrail_notes.append(
+            "PASSED numeric sanity check: all policy ranges and waiting periods "
+            "are within valid bounds."
+        )
 
     # 4. Calculate confidence score
     confidence_score = calculate_confidence_score(
@@ -437,7 +531,9 @@ async def guardrail_node(state: SessionState) -> dict[str, Any]:
     if approved:
         guardrail_notes.append("STATUS: Approved for explanation generation.")
     else:
-        guardrail_notes.append(f"STATUS: Disapproved ({len(all_violations)} compliance violations).")
+        guardrail_notes.append(
+            f"STATUS: Disapproved ({len(all_violations)} compliance violations)."
+        )
 
     # 6. Evaluate escalation triggers
     escalation, escalation_reason = evaluate_escalation(
@@ -467,4 +563,11 @@ async def guardrail_node(state: SessionState) -> dict[str, Any]:
         "escalation": escalation,
         "escalation_reason": escalation_reason,
         "guardrail_notes": guardrail_notes,
+        "confidence_score": confidence_score,
+        "confidence_inputs": {
+            "profile_completeness": _profile_completeness(user_profile),
+            "retrieval_agreement": _retrieval_agreement(draft_output),
+            "policy_term_completeness": _policy_term_completeness(draft_output),
+            "compliance_violation_count": len(all_violations),
+        },
     }

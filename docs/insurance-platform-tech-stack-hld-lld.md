@@ -18,7 +18,7 @@ Practical build reference: what to actually use, what to skip, and how to struct
 
 ## 2. Orchestration framework
 
-- **LangGraph — use this as the core.** Reached its 1.0 release, MIT-licensed. It's built for exactly what this architecture needs: cyclic graphs (Missing Info loop, Needs Intake follow-ups), parallel node execution (the five-agent fan-out), built-in checkpointing (Audit trail), human-in-the-loop interrupts (Human Advisor Escalation), and persistent state (User Profile Memory, session continuation). In 2026 production benchmarks it holds up best specifically on complex, multi-step, branching tasks — your exact category.
+- **LangGraph — use this as the core.** Reached its 1.0 release, MIT-licensed. It's built for exactly what this architecture needs: cyclic graphs (Missing Info loop, Needs Intake follow-ups), parallel node execution (the five-agent fan-out), built-in checkpointing (Audit trail), human-in-the-loop interrupts (Human Advisor Escalation), and session continuation. The separate, consent-gated User Profile Memory is stored as a structured Postgres JSONB snapshot, not in the LangGraph checkpoint or vector store. In 2026 production benchmarks it holds up best specifically on complex, multi-step, branching tasks — your exact category.
 - **CrewAI — only for a throwaway first prototype.** Role-based, fastest to get a demo running if the team is new to agent frameworks. But it's weaker on cycles, checkpointing, and human-in-the-loop — the parts your compliance layer actually depends on. If you start here, plan to migrate the reasoning core to LangGraph before anything touches real user data.
 - **Skip AutoGen.** Microsoft moved it to maintenance mode; its successor (Microsoft Agent Framework) is solid but pulls you toward the Azure ecosystem for no reason you need here.
 - For a genuinely simple sub-agent (e.g., Risk Analysis — one model call plus a calculator tool), a lightweight SDK (OpenAI Agents SDK / Anthropic's Agent SDK) called as a single LangGraph node is often less code than forcing everything through the same heavy multi-agent abstraction.
@@ -48,8 +48,8 @@ A pattern that works well in practice: n8n handles triggers and integrations, an
 | Backend/API | FastAPI (Python) | Async, streams agent output naturally, pairs directly with LangGraph |
 | Agent orchestration | LangGraph | See above |
 | LLMs | Groq + Gemini Flash + OpenRouter (fallback chain) → paid models as revenue allows | Free-tier coverage without single-provider lock-in |
-| Vector DB / RAG | pgvector (if already on Postgres) or Chroma for MVP; Qdrant/Weaviate if you outgrow them | One fewer moving part for a small team |
-| Relational DB | Postgres | User profiles, consent records, audit trail, session checkpoints (LangGraph has a native Postgres checkpointer) |
+| Vector DB / RAG | Chroma for policy-clause retrieval in the current MVP; pgvector or another vector store is a future option | Semantic search over policy text, not User Profile Memory |
+| Relational DB | Postgres | Structured User Profile Memory (JSONB), consent records, audit trail and policy terms; LangGraph also supports a Postgres checkpointer |
 | Session/cache | Redis | Rate limiting, short-term conversation cache |
 | Automation/glue | n8n (self-hosted) | WhatsApp bridging, scheduled data refresh, escalation notifications |
 | Observability | LangSmith or Langfuse (open-source) | Tracing every agent step — doubles as your audit trail's technical backbone |
@@ -100,9 +100,11 @@ class SessionState(TypedDict):
     transparency_scores: dict
     draft_output: dict
     guardrail_notes: list[str]
-    approved: bool                # set by guardrail; explanation_report only ships if True
+    approved: bool                # set by guardrail; API delivery gate requires True
     escalation: bool
     escalation_reason: str | None
+    delivery_hold: bool            # fail-closed API release gate; queue ACK never clears it
+    advisor_notification: dict     # dispatch receipt; not advisor sign-off
     output: dict                  # written by explanation_report, not guardrail — see 7.2
 ```
 
@@ -119,8 +121,8 @@ class SessionState(TypedDict):
 | `compare_verify` | after domain agents | retrieved_facts, `policy_terms` lookups | draft_output, hidden_clauses, transparency_scores | Deterministic rules-engine lookups for anything with a correct answer; LLM only for prose synthesis |
 | `guardrail` | after compare_verify | draft_output | guardrail_notes, approved, escalation, escalation_reason | Hallucination check (re-query sources), rule engine — does **not** write `output` |
 | `explanation_report` | after guardrail (runs regardless of escalation) | draft_output, guardrail_notes, retrieved_facts, target_language | output | LLM rendering call in target_language |
-| `escalate` | escalation == true | escalation_reason | notification, delivery-hold flag | n8n webhook → human advisor queue |
-| `persist_memory` | session end + consent == true | full state | User Profile Memory row, `decision_trace` row | Postgres/pgvector write |
+| `escalate` | after report generation; delivery hold applies if escalation or not approved | escalation_reason, output availability | advisor_notification receipt, delivery_hold | configured advisor queue; test receiver is not a production destination |
+| `persist_memory` | every completed turn | full state, verified user identity when supplied, durable save_profile consent | unconditional `decision_trace`; consent-gated user profile snapshot | Postgres |
 
 ### 7.3 Request sequence
 
@@ -131,9 +133,9 @@ class SessionState(TypedDict):
 5. `compare_verify` merges their outputs: deterministic lookups against `policy_terms` for anything with one correct answer (limits, exclusions, eligibility), RAG only for clause wording the response needs to explain.
 6. `guardrail` fact-checks and enforces language rules; sets `approved` / `escalation` — it does not write the final text.
 7. `explanation_report` always runs next, rendering the rationale, comparison, and citations into `output` — this gives an escalated case something concrete for the advisor to review, not a blocked draft.
-8. If `escalation`, fire `escalate` and hold `output` for advisor sign-off instead of releasing it immediately; otherwise release straight to the response.
-9. Response streamed back with per-claim source tags.
-10. On session end, if `consent`, `persist_memory` runs; a `decision_trace` row is written regardless of consent, since it's operational/compliance data rather than personal preference data — confirm that split with your DPDP advisor.
+8. `escalate` runs after report generation. It dispatches a notification when review is required and preserves delivery hold on escalation, missing approval, an unconfigured destination, or dispatch failure. A queue receipt is not advisor approval and never releases output. The API independently enforces this hold and redacts report/draft/calculator/citation fields while held.
+9. `persist_memory` writes one decision trace on every completed turn, including early-return intake and intent routes. Only the separate profile-memory upsert is gated by verified user identity and active `save_profile` consent.
+10. The API returns the result with per-claim source tags unless the escalation delivery hold applies.
 
 ### 7.4 Postgres schema (sketch)
 
@@ -143,6 +145,9 @@ users(id, phone_hash, email_hash, role, tenant_id, created_at)
     -- tenant_id: nullable for now, reserved for future white-label broker partners
     -- email_hash: added for email-based auth (magic link / email+password per design.md § 8.2)
 consent_records(id, user_id, scope, granted_at, revoked_at)
+user_profile_memory(user_id, profile_snapshot_json, updated_at)
+    -- profile_snapshot_json is JSONB: one structured, deletable family profile per user;
+    -- written/read only with verified identity and active save_profile consent
 sessions(id, user_id, started_at, ended_at, intent)
 audit_log(id, session_id, node_name, input_hash, output_hash, sources_json, created_at)
 escalations(id, session_id, reason, status, assigned_advisor, created_at)
@@ -162,13 +167,16 @@ decision_trace(id, session_id, user_profile_snapshot_json, policy_versions_evalu
     -- it from logs, and lets you replay the same input after a deploy and diff the trace.
 ```
 
-**Auth/RBAC, minimally:** `role` on `users` gates what a session can do (a customer sees only their own sessions; an advisor sees only cases assigned to them via `escalations.assigned_advisor`). This didn't exist anywhere in this doc until now — worth having from the first version of the API, not retrofitted after the advisor console exists.
+**Identity/security boundary:** Profile-memory access requires a Bearer JWT verified against an HTTPS JWKS with RS256, a UUID `sub`, and valid `iss`, `aud`, `iat` and `exp` claims. The server requires `AUTH_ISSUER`, `AUTH_AUDIENCE` and `AUTH_JWKS_URL`; if issuer configuration or token verification is unavailable, identity-sensitive access fails closed. The API does not mint tokens, and no real identity provider is configured yet. An anonymous `/v1/message` turn without `user_id` can still write its unconditional decision trace. A message that supplies `user_id` must authenticate and match the token subject. Consent grants/revocations and profile-memory deletion likewise require a verified subject matching the requested user ID. Revoking `save_profile` or calling the deletion endpoint erases that user's stored snapshot.
+
+**Decision-trace classification:** traces are currently treated as operational/compliance evidence and are retained regardless of profile-memory consent. This classification requires an actual review with the DPDP compliance adviser; it has not been approved yet. Langfuse content redaction does not redact Postgres decision traces.
 
 ### 7.5 API surface (sketch)
 
 ```
-POST /v1/message        -> {session_id, reply, citations[], escalation?}
-POST /v1/consent        -> grant/revoke scopes
+POST /v1/message        -> {session_id, user_id?, reply, citations[], escalation?}; Bearer identity required when user_id is supplied
+POST /v1/consent        -> persist grant/revoke scopes only for verified token subject
+DELETE /v1/profile-memory/{user_id} -> erase the verified token subject's stored profile snapshot
 GET  /v1/session/{id}   -> full transcript + citations (for the audit trail / "why am I seeing this")
 POST /v1/webhook/whatsapp -> inbound channel bridge (via n8n or direct Meta webhook)
 ```
@@ -208,7 +216,7 @@ Detect it once during `input_validate` or the first `needs_intake` turn, and pas
 
 ## 10. v5 alignment notes — the `explanation_report` node
 
-The v5 diagram added Stage 5 (Explanation & Report Agent) as its own step after Guardrail — a real split of responsibility worth carrying into the graph precisely. Guardrail now only approves (`approved`, `escalation`, `escalation_reason`); it no longer writes `output`. `explanation_report` runs next, unconditionally, rendering the rationale, comparison, and citations — deliberately so that an escalated case gives the human advisor something concrete to react to, not a blocked draft. `escalate` gates *delivery*, not *generation*. One field added: `approved: bool`.
+The v5 diagram added Stage 5 (Explanation & Report Agent) as its own step after Guardrail. Guardrail only approves (`approved`, `escalation`, `escalation_reason`); it does not write `output`. `explanation_report` must run unconditionally before `escalate`, so an escalated case gives the human advisor a report to review. `escalate` gates *delivery*, not *generation*. State includes `approved`, `delivery_hold`, and an `advisor_notification` receipt. The production advisor destination is unconfigured; a local loopback receiver is test infrastructure only. Current implementation is interim and fail-closed while `explanation_report` awaits review.
 
 ---
 
@@ -243,9 +251,12 @@ Stage 4's job is specifically compliance and disclosure enforcement — worth th
 | Data | Where it lives | Why |
 |---|---|---|
 | Session state (in-flight conversation) | Redis, TTL-based | Ephemeral, high read/write, doesn't need durability |
-| User profiles, consent, audit log, decision_trace, policy_terms | Postgres | Durable, relational, needs to survive restarts and support queries |
+| User Profile Memory | Postgres `user_profile_memory.profile_snapshot_json` (JSONB) | Exact keyed reuse of age, city, dependents and health declarations, plus consent-gated reads/writes and row deletion; semantic embeddings are unnecessary for this record |
+| Consent, audit log, decision_trace, policy_terms | Postgres | Durable, relational, needs to survive restarts and support queries |
 | Raw ingested documents (PDFs, scraped pages) | Object storage (S3-compatible — AWS S3, or a self-hosted MinIO to start) | Large binary blobs don't belong in Postgres rows |
-| Policy chunks for retrieval | pgvector/Chroma (already in the stack) | Vector similarity search |
+| Policy chunks for retrieval | Chroma in the current MVP; pgvector is an alternative | Vector similarity search over policy wording and explanations only |
+
+**Implemented storage decision:** The earlier pgvector proposal for User Profile Memory was replaced with a Postgres JSONB snapshot. Profile fields must be read by exact key and erased on consent revocation or direct deletion; embedding sensitive family details would add no retrieval benefit. The vector store remains dedicated to policy-clause RAG. This is an intentional implementation choice, not an omitted vector-memory feature.
 
 **Semantic caching is worth adding early, not as a later optimization.** A meaningful share of insurance questions repeat across users in different words ("does this cover critical illness" vs. "is critical illness included") — semantic caching catches these by comparing embeddings instead of exact text and serves a cached answer instead of a fresh LLM call. Production deployments of this pattern report cost reductions in the 40–86% range depending on query repetition, with cache hits returning in single-digit milliseconds instead of seconds. Practically: use your existing vector DB to store a cache of (query embedding → response), check it before every LLM call in `needs_intake` and `compare_verify` specifically (the two nodes handling the most repetitive question types), and only skip the cache for anything touching a specific user's private profile data, where a cached answer from someone else would be wrong by definition.
 

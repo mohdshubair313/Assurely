@@ -13,6 +13,7 @@ Responsibilities:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -23,6 +24,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.v1.router import api_v1_router
 from app.cache.redis_client import close_redis_client
 from app.core.config import get_settings
+from app.core.tracing import flush_langfuse
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +37,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     yield
     logger.info("Shutting down InsuranceAI Advisory Backend")
     await close_redis_client()
+    await asyncio.to_thread(flush_langfuse)
 
 
 def create_app() -> FastAPI:

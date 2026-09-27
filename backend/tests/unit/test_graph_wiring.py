@@ -1,7 +1,9 @@
 """Unit tests for SessionState, needs_intake, and basic graph execution."""
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+from langchain_core.runnables import RunnableConfig
 
 from app.graph.build_graph import build_graph, route_after_intake
 from app.graph.state import SessionState, create_initial_state
@@ -51,20 +53,39 @@ async def test_graph_execution_single_node() -> None:
     AsyncSessionLocal is mocked to avoid asyncpg event-loop conflicts when
     the full graph routes through compare_verify (Stage 3) after profile completion.
     """
-    graph = build_graph()
-
     # Provide all required info in the user message so profile completes in one turn
     initial_state = create_initial_state(
         session_id="test-intake-session",
-        user_message="I am 35 years old living in Mumbai with no pre-existing health issue. Myself only.",
+        user_message=(
+            "I am 35 years old living in Mumbai with no pre-existing health issue. Myself only."
+        ),
     )
 
-    mock_llm_json = '{"age": 35, "city_tier": "tier_1", "dependents": 0, "pre_existing_conditions": false, "existing_coverage": 0}'
+    mock_llm_json = (
+        '{"age": 35, "city_tier": "tier_1", "dependents": 0, '
+        '"pre_existing_conditions": false, "existing_coverage": 0}'
+    )
 
     mock_session = _make_empty_db_session()
 
-    with patch("app.llm.fallback_chain.llm_call") as mock_llm, \
-         patch("app.graph.nodes.compare_verify.AsyncSessionLocal", return_value=mock_session):
+    with (
+        patch("app.graph.nodes.needs_intake.llm_call") as mock_llm,
+        patch(
+            "app.graph.nodes.intent_router.llm_call",
+            return_value=LLMResult(
+                content='{"intent":"health"}',
+                provider="mock",
+                model="mock-router",
+                total_tokens=3,
+            ),
+        ),
+        patch("app.graph.nodes.compare_verify.AsyncSessionLocal", return_value=mock_session),
+        patch(
+            "app.graph.build_graph.persist_memory_node",
+            new=AsyncMock(return_value={"decision_trace_persisted": True}),
+        ),
+    ):
+        graph = build_graph()
         mock_llm.return_value = LLMResult(
             content=mock_llm_json,
             provider="mock",
@@ -72,7 +93,7 @@ async def test_graph_execution_single_node() -> None:
             total_tokens=42,
         )
 
-        config = {"configurable": {"thread_id": "test-intake-session"}}
+        config: RunnableConfig = {"configurable": {"thread_id": "test-intake-session"}}
         result = await graph.ainvoke(initial_state, config=config)
 
         # Profile should be populated

@@ -9,8 +9,10 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     container_name: insurance-api
+    env_file:
+      - ./backend/.env
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     environment:
       - DATABASE_URL=postgresql+asyncpg://insurance:insurance_dev@postgres:5432/insurance_db
       - REDIS_URL=redis://redis:6379/0
@@ -35,7 +37,7 @@ services:
     image: postgres:16-alpine
     container_name: insurance-postgres
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     environment:
       POSTGRES_USER: insurance
       POSTGRES_PASSWORD: insurance_dev
@@ -55,7 +57,7 @@ services:
     image: redis:7-alpine
     container_name: insurance-redis
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     volumes:
       - redis-data:/data
     healthcheck:
@@ -71,7 +73,7 @@ services:
     image: chromadb/chroma:0.6.3
     container_name: insurance-chroma
     ports:
-      - "8100:8000"
+      - "127.0.0.1:8100:8000"
     volumes:
       - chroma-data:/chroma/chroma
     environment:

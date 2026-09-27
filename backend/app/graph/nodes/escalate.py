@@ -25,10 +25,14 @@ logger = logging.getLogger(__name__)
 
 def _event_id(state: SessionState) -> str:
     """Stable across retries/restarts; a material case revision is a new event."""
+
     def material(value: Any) -> Any:
         if isinstance(value, dict):
-            return {key: material(item) for key, item in value.items()
-                    if key not in {"generated_at", "retrieved_at"}}
+            return {
+                key: material(item)
+                for key, item in value.items()
+                if key not in {"generated_at", "retrieved_at"}
+            }
         if isinstance(value, list):
             return [material(item) for item in value]
         return value
@@ -60,7 +64,8 @@ def _valid_destination(url: str, settings: Settings) -> bool:
 
 
 async def dispatch_notification(
-    payload: dict[str, Any], settings: Settings,
+    payload: dict[str, Any],
+    settings: Settings,
 ) -> dict[str, Any]:
     """POST a real queue event; require an explicit, matching durable-queue ACK.
 
@@ -94,8 +99,11 @@ async def dispatch_notification(
                         ack = response.json()
                     except ValueError:
                         ack = None
-                    if (isinstance(ack, dict) and ack.get("queued") is True
-                            and ack.get("event_id") == event_id):
+                    if (
+                        isinstance(ack, dict)
+                        and ack.get("queued") is True
+                        and ack.get("event_id") == event_id
+                    ):
                         receipt.pop("error", None)
                         return {**receipt, "status": "queued"}
                     return {**receipt, "error": "invalid_acknowledgement"}
@@ -106,7 +114,9 @@ async def dispatch_notification(
                 # Do not expose URLs, credentials or remote response bodies.
                 receipt["error"] = "transport_failure"
             if attempt < settings.advisor_webhook_max_attempts:
-                await asyncio.sleep(settings.advisor_webhook_retry_delay_seconds * 2 ** (attempt - 1))
+                await asyncio.sleep(
+                    settings.advisor_webhook_retry_delay_seconds * 2 ** (attempt - 1)
+                )
     return receipt
 
 
@@ -127,8 +137,11 @@ async def escalate_node(state: SessionState) -> dict[str, Any]:
         settings = get_settings()
         event_id = _event_id(state)
         destination_id = hashlib.sha256(settings.advisor_webhook_url.encode()).hexdigest()
-        if (previous.get("event_id") == event_id and previous.get("status") == "queued"
-                and previous.get("destination_id") == destination_id):
+        if (
+            previous.get("event_id") == event_id
+            and previous.get("status") == "queued"
+            and previous.get("destination_id") == destination_id
+        ):
             return held
         payload = {
             "event_id": event_id,

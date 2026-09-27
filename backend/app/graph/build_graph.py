@@ -7,9 +7,8 @@ Builds the compiled LangGraph ``StateGraph`` that implements the pipeline:
   4. Parallel fan-out: health_domain_agent + risk_analysis (Stage 2)
   5. compare_verify → fan-in / join (Stage 3, deterministic DB lookups)
   6. guardrail → sets approved / escalation (Stage 4)
-  7. escalate → notification and delivery hold → END (current interim graph)
-  Later: insert explanation_report unconditionally before escalate (Stage 5).
-  9. Conditional: persist_memory (on session end)
+  7. explanation_report → escalate → persist_memory → END
+  8. Early-return paths also pass through persist_memory once per turn.
 
 Every routing decision is a plain conditional edge over explicit state fields
 (AGENTS.md rule 2). No node asks an LLM "what should happen next."
@@ -24,12 +23,15 @@ from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
+from app.core.tracing import trace_node
 from app.graph.nodes.compare_verify import compare_verify_node
 from app.graph.nodes.escalate import escalate_node
+from app.graph.nodes.explanation_report import explanation_report_node
 from app.graph.nodes.guardrail import guardrail_node
 from app.graph.nodes.health_domain_agent import health_domain_agent_node
 from app.graph.nodes.intent_router import intent_router_node
 from app.graph.nodes.needs_intake import needs_intake_node
+from app.graph.nodes.persist_memory import persist_memory_node
 from app.graph.nodes.risk_analysis import risk_analysis_node
 from app.graph.state import SessionState
 
@@ -76,19 +78,27 @@ def build_graph(
     (health_domain_agent, risk_analysis), and Stage 3 fan-in (compare_verify)
     with deterministic conditional edges.
 
-    Stage 4 is followed by escalate for delivery control. Stage 5 is still
-    deferred; it must later run unconditionally between guardrail and escalate.
+    Stage 5 report runs unconditionally before escalation gates delivery.
+    Persist memory runs at the end of every completed turn.
     """
     builder: StateGraph[Any, Any, Any, Any] = StateGraph(cast(Any, SessionState))
 
     # 1. Register nodes
-    builder.add_node("needs_intake", needs_intake_node)
-    builder.add_node("intent_router", intent_router_node)
-    builder.add_node("health_domain_agent", health_domain_agent_node)
-    builder.add_node("risk_analysis", risk_analysis_node)
-    builder.add_node("compare_verify", compare_verify_node)  # Stage 3 fan-in
-    builder.add_node("guardrail", guardrail_node)            # Stage 4 compliance check
-    builder.add_node("escalate", escalate_node)
+    builder.add_node("needs_intake", trace_node("needs-intake", needs_intake_node))
+    builder.add_node("intent_router", trace_node("intent-router", intent_router_node))
+    builder.add_node(
+        "health_domain_agent", trace_node("health-domain-agent", health_domain_agent_node)
+    )
+    builder.add_node("risk_analysis", trace_node("risk-analysis", risk_analysis_node))
+    builder.add_node(
+        "compare_verify", trace_node("compare-verify", compare_verify_node)
+    )  # Stage 3 fan-in
+    builder.add_node("guardrail", trace_node("guardrail", guardrail_node))  # Stage 4 check
+    builder.add_node(
+        "explanation_report", trace_node("explanation-report", explanation_report_node)
+    )
+    builder.add_node("escalate", trace_node("escalate", escalate_node))
+    builder.add_node("persist_memory", trace_node("persist-memory", persist_memory_node))
 
     # 2. Wire entry point
     builder.add_edge(START, "needs_intake")
@@ -98,8 +108,8 @@ def build_graph(
         "needs_intake",
         route_after_intake,
         {
-            "continue_intake": END,          # Turn ends, question delivered to user
-            "route_intent": "intent_router", # Profile complete -> classify intent
+            "continue_intake": "persist_memory",  # Persist before returning the question
+            "route_intent": "intent_router",  # Profile complete -> classify intent
         },
     )
 
@@ -110,8 +120,8 @@ def build_graph(
         {
             "health_domain_agent": "health_domain_agent",
             "risk_analysis": "risk_analysis",
-            "life_deferred": END,            # Phase 1 scope message delivered
-            "unclear_intent": END,           # Clarification request delivered
+            "life_deferred": "persist_memory",  # Persist before returning scope message
+            "unclear_intent": "persist_memory",  # Persist before returning clarification
         },
     )
 
@@ -122,10 +132,11 @@ def build_graph(
     # 6. Stage 3 -> Stage 4 guardrail (compliance & disclosure check)
     builder.add_edge("compare_verify", "guardrail")
 
-    # Interim delivery gate. Later insert explanation_report on this edge,
-    # unconditionally: escalation must never skip report generation.
-    builder.add_edge("guardrail", "escalate")
-    builder.add_edge("escalate", END)
+    # Report generation always runs; escalation is only a delivery gate.
+    builder.add_edge("guardrail", "explanation_report")
+    builder.add_edge("explanation_report", "escalate")
+    builder.add_edge("escalate", "persist_memory")
+    builder.add_edge("persist_memory", END)
 
     memory = checkpointer or MemorySaver()
     return builder.compile(checkpointer=memory)

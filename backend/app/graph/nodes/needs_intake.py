@@ -35,9 +35,11 @@ OPTIONAL_HEALTH_FIELDS = ["is_nri", "existing_coverage"]
 EXTRACTION_SYSTEM_PROMPT = """You are an insurance intake assistant in India.
 Extract user profile fields from the conversation. Return ONLY a valid JSON object with keys:
 - "age": integer or null (e.g. 35)
-- "city_tier": string ("tier_1" for metros like Mumbai/Delhi/Bengaluru/Chennai/Hyderabad/Kolkata, "tier_2" for large cities like Pune/Jaipur/Ahmedabad/Lucknow, "tier_3" for others) or null
+- "city_tier": string ("tier_1" for metros like Mumbai/Delhi/Bengaluru/Chennai/Hyderabad/Kolkata,
+  "tier_2" for large cities like Pune/Jaipur/Ahmedabad/Lucknow, "tier_3" for others) or null
 - "dependents": integer or null (count of family members to cover)
-- "pre_existing_conditions": boolean or list of strings or null (e.g. diabetes, hypertension, asthma)
+- "pre_existing_conditions": boolean or list of strings or null
+  (e.g. diabetes, hypertension, asthma)
 - "existing_coverage": integer in INR or 0
 - "is_nri": boolean or null (true if user mentions living abroad, NRI status, or overseas residence)
 
@@ -53,7 +55,10 @@ def _rule_based_extract(text: str, current_profile: dict[str, Any]) -> dict[str,
 
     # Age extraction: "32 years", "age 32", "i am 32"
     if "age" not in extracted or extracted["age"] is None:
-        age_match = re.search(r"\b(?:age\s*(?:is\s*)?|i am\s*|i'm\s*)?(\d{1,2})\s*(?:years?\s*old|yrs?|years?)?\b", text_lower)
+        age_match = re.search(
+            r"\b(?:age\s*(?:is\s*)?|i am\s*|i'm\s*)?(\d{1,2})\s*(?:years?\s*old|yrs?|years?)?\b",
+            text_lower,
+        )
         if age_match:
             val = int(age_match.group(1))
             if 18 <= val <= 100:
@@ -62,7 +67,16 @@ def _rule_based_extract(text: str, current_profile: dict[str, Any]) -> dict[str,
     # City tier extraction
     if "city_tier" not in extracted or extracted["city_tier"] is None:
         metros = ["mumbai", "delhi", "bangalore", "bengaluru", "chennai", "hyderabad", "kolkata"]
-        tier_2 = ["pune", "ahmedabad", "jaipur", "lucknow", "chandigarh", "kochi", "surat", "indore"]
+        tier_2 = [
+            "pune",
+            "ahmedabad",
+            "jaipur",
+            "lucknow",
+            "chandigarh",
+            "kochi",
+            "surat",
+            "indore",
+        ]
         if any(m in text_lower for m in metros) or "tier 1" in text_lower or "metro" in text_lower:
             extracted["city_tier"] = "tier_1"
         elif any(t in text_lower for t in tier_2) or "tier 2" in text_lower:
@@ -72,9 +86,24 @@ def _rule_based_extract(text: str, current_profile: dict[str, Any]) -> dict[str,
 
     # Pre-existing conditions
     if "pre_existing_conditions" not in extracted or extracted["pre_existing_conditions"] is None:
-        if any(neg in text_lower for neg in ["no illness", "no disease", "healthy", "no pre-existing", "no preexisting", "none", "no health issue", "no condition"]):
+        if any(
+            neg in text_lower
+            for neg in [
+                "no illness",
+                "no disease",
+                "healthy",
+                "no pre-existing",
+                "no preexisting",
+                "none",
+                "no health issue",
+                "no condition",
+            ]
+        ):
             extracted["pre_existing_conditions"] = False
-        elif any(pos in text_lower for pos in ["diabetes", "bp", "hypertension", "thyroid", "asthma", "heart", "surgery"]):
+        elif any(
+            pos in text_lower
+            for pos in ["diabetes", "bp", "hypertension", "thyroid", "asthma", "heart", "surgery"]
+        ):
             extracted["pre_existing_conditions"] = True
 
     # Dependents
@@ -82,7 +111,14 @@ def _rule_based_extract(text: str, current_profile: dict[str, Any]) -> dict[str,
         dep_match = re.search(r"\b(\d+)\s*(?:dependents?|family members?|members?)\b", text_lower)
         if dep_match:
             extracted["dependents"] = int(dep_match.group(1))
-        elif "no dependents" in text_lower or "zero dependents" in text_lower or "myself only" in text_lower or "individual" in text_lower or "single" in text_lower or "just me" in text_lower:
+        elif (
+            "no dependents" in text_lower
+            or "zero dependents" in text_lower
+            or "myself only" in text_lower
+            or "individual" in text_lower
+            or "single" in text_lower
+            or "just me" in text_lower
+        ):
             extracted["dependents"] = 0
         elif "wife" in text_lower or "husband" in text_lower or "spouse" in text_lower:
             dep_count = 1
@@ -93,12 +129,40 @@ def _rule_based_extract(text: str, current_profile: dict[str, Any]) -> dict[str,
     # NRI status (flagged if user declares living abroad or NRI status)
     # Explicit declarations can correct a prior turn; word boundaries avoid
     # incidental substrings, and negation must not become an NRI declaration.
-    if re.search(r"\b(?:not (?:an? )?(?:nri|non[- ]resident)|no longer (?:an? )?nri|not living abroad|(?<!non-)(?<!non )resident indian)\b", text_lower):
+    if re.search(
+        r"\b(?:not (?:an? )?(?:nri|non[- ]resident)|no longer (?:an? )?nri|"
+        r"not living abroad|(?<!non-)(?<!non )resident indian)\b",
+        text_lower,
+    ):
         extracted["is_nri"] = False
-    elif re.search(r"\b(?:nri|non[- ]resident|living abroad|living in (?:dubai|uae|us|usa|uk|singapore))\b", text_lower):
+    elif re.search(
+        r"\b(?:nri|non[- ]resident|living abroad|living in (?:dubai|uae|us|usa|uk|singapore))\b",
+        text_lower,
+    ):
         extracted["is_nri"] = True
 
     return extracted
+
+
+def _normalize_profile(profile: dict[str, Any]) -> dict[str, Any]:
+    """Keep calculator inputs in their declared types before checking completeness."""
+    normalized = dict(profile)
+    for field in ("age", "dependents", "existing_coverage"):
+        value = normalized.get(field)
+        if isinstance(value, str) and re.fullmatch(r"\d+", value.strip()):
+            value = int(value)
+        if type(value) is int and value >= (1 if field == "age" else 0):
+            normalized[field] = value
+        else:
+            normalized.pop(field, None)
+    if normalized.get("city_tier") not in ("tier_1", "tier_2", "tier_3"):
+        normalized.pop("city_tier", None)
+    ped = normalized.get("pre_existing_conditions")
+    if not isinstance(ped, bool) and not (
+        isinstance(ped, list) and all(isinstance(item, str) and item.strip() for item in ped)
+    ):
+        normalized.pop("pre_existing_conditions", None)
+    return normalized
 
 
 async def needs_intake_node(state: SessionState) -> dict[str, Any]:
@@ -107,7 +171,7 @@ async def needs_intake_node(state: SessionState) -> dict[str, Any]:
     Extracts user details, computes missing fields, and runs deterministic
     calculators when the profile is complete.
     """
-    user_profile = dict(state.get("user_profile", {}))
+    user_profile = _normalize_profile(state.get("user_profile", {}))
     messages = list(state.get("messages", []))
     session_id = state.get("session_id", "default_session")
 
@@ -133,7 +197,9 @@ async def needs_intake_node(state: SessionState) -> dict[str, Any]:
             if raw.startswith("```"):
                 raw = re.sub(r"^```(?:json)?", "", raw).rstrip("`").strip()
             parsed = json.loads(raw)
-            for k, v in parsed.items():
+            if not isinstance(parsed, dict):
+                raise ValueError("Intake extraction must be a JSON object")
+            for k, v in _normalize_profile(parsed).items():
                 if v is not None and k in REQUIRED_HEALTH_FIELDS + OPTIONAL_HEALTH_FIELDS:
                     user_profile[k] = v
             # Preserve explicit NRI declarations even if model extraction omits
@@ -146,6 +212,8 @@ async def needs_intake_node(state: SessionState) -> dict[str, Any]:
             user_profile = _rule_based_extract(last_user_msg, user_profile)
     else:
         user_profile = _rule_based_extract("", user_profile)
+
+    user_profile = _normalize_profile(user_profile)
 
     # 2. Determine missing required fields
     missing_fields = [f for f in REQUIRED_HEALTH_FIELDS if user_profile.get(f) is None]
@@ -176,9 +244,14 @@ async def needs_intake_node(state: SessionState) -> dict[str, Any]:
             "age": "Could you please share your age?",
             "city_tier": "Which city do you live in? (Hospital costs vary significantly by city).",
             "dependents": "How many family members would you like to include in the cover?",
-            "pre_existing_conditions": "Do you or any covered family members have any pre-existing health conditions (e.g., diabetes, blood pressure)?",
+            "pre_existing_conditions": (
+                "Do you or any covered family members have any pre-existing health conditions "
+                "(e.g., diabetes, blood pressure)?"
+            ),
         }
-        question = prompts.get(next_missing, "Could you provide more details about your insurance requirements?")
+        question = prompts.get(
+            next_missing, "Could you provide more details about your insurance requirements?"
+        )
         updates["messages"] = messages + [{"role": "assistant", "content": question}]
 
     return updates

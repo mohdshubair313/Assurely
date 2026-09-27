@@ -16,7 +16,7 @@ when a document has changed and needs re-ingestion.
 import uuid
 from datetime import datetime
 
-from sqlalchemy import String, Text, DateTime, text
+from sqlalchemy import DateTime, String, Text, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 

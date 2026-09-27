@@ -9,10 +9,11 @@ import asyncio
 from logging.config import fileConfig
 
 import sqlalchemy as sa
-from alembic import context
 from sqlalchemy import pool
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
+from alembic import context
+from app.core.config import get_settings
 from app.models.db import Base  # noqa: F401 — imported for side-effect (metadata registration)
 
 config = context.config
@@ -20,6 +21,10 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 target_metadata = Base.metadata
+
+# Keep migrations pointed at the same configured database as the API instead
+# of the localhost-only placeholder in alembic.ini (which fails in Compose).
+config.set_main_option("sqlalchemy.url", get_settings().database_url.replace("%", "%%"))
 
 
 def run_migrations_offline() -> None:

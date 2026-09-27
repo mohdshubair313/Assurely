@@ -26,28 +26,50 @@ from app.llm.fallback_chain import llm_call
 
 logger = logging.getLogger(__name__)
 
-INTENT_CLASSIFICATION_PROMPT = """You are an insurance intent classification engine for the Indian insurance market.
-Analyze the user conversation and profile to classify intent into exactly one of three categories:
-1. "health": User wants mediclaim, health insurance, hospitalization cover, family floater, critical illness, or medical expense protection.
-2. "life": User wants term insurance, term life, death cover, income replacement, or pure protection life cover.
-3. "unclear": User asked a general question or did not specify whether they need health or life insurance.
-
-Return ONLY a valid JSON object with:
-{
-  "intent": "health" | "life" | "unclear",
-  "confidence": float (0.0 to 1.0),
-  "reasoning": "brief explanation"
-}
-Do not wrap in markdown or markdown code blocks. Output raw JSON only.
-"""
+INTENT_CLASSIFICATION_PROMPT = (
+    "You are an insurance intent classification engine for the Indian insurance market.\n"
+    "Analyze the user conversation and profile to classify intent into exactly one of "
+    "three categories:\n"
+    '1. "health": User wants mediclaim, health insurance, hospitalization cover, '
+    "family floater, critical illness, or medical expense protection.\n"
+    '2. "life": User wants term insurance, term life, death cover, income replacement, '
+    "or pure protection life cover.\n"
+    '3. "unclear": User asked a general question or did not specify whether they need '
+    "health or life insurance.\n\n"
+    "Return ONLY a valid JSON object with:\n"
+    "{\n"
+    '  "intent": "health" | "life" | "unclear",\n'
+    '  "confidence": float (0.0 to 1.0),\n'
+    '  "reasoning": "brief explanation"\n'
+    "}\n"
+    "Do not wrap in markdown or markdown code blocks. Output raw JSON only.\n"
+)
 
 
 def _rule_based_classify_intent(messages: list[dict[str, Any]]) -> str:
     """Deterministic keyword fallback if LLM classification fails."""
     combined_text = " ".join(m.get("content", "") for m in messages).lower()
 
-    health_keywords = ["health", "mediclaim", "hospital", "illness", "medical", "disease", "floater", "doctor", "cashless"]
-    life_keywords = ["term life", "life insurance", "death benefit", "pure term", "nominee", "human life value", "hlv"]
+    health_keywords = [
+        "health",
+        "mediclaim",
+        "hospital",
+        "illness",
+        "medical",
+        "disease",
+        "floater",
+        "doctor",
+        "cashless",
+    ]
+    life_keywords = [
+        "term life",
+        "life insurance",
+        "death benefit",
+        "pure term",
+        "nominee",
+        "human life value",
+        "hlv",
+    ]
 
     has_health = any(k in combined_text for k in health_keywords)
     has_life = any(k in combined_text for k in life_keywords)
@@ -97,7 +119,8 @@ async def intent_router_node(state: SessionState) -> dict[str, Any]:
         # Formulate clarifying question to distinguish health vs life
         clarification = (
             "Could you clarify whether you are looking for health insurance "
-            "(hospitalization and medical bill cover) or term life insurance (financial protection for family)?"
+            "(hospitalization and medical bill cover) or term life insurance "
+            "(financial protection for family)?"
         )
         updates["messages"] = messages + [{"role": "assistant", "content": clarification}]
     elif intent == "life":

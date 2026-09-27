@@ -16,7 +16,6 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass
-from typing import Any
 
 import httpx
 
@@ -28,7 +27,13 @@ logger = logging.getLogger(__name__)
 class ProviderError(Exception):
     """Base exception for provider failures."""
 
-    def __init__(self, provider: str, message: str, status_code: int | None = None, is_rate_limit: bool = False):
+    def __init__(
+        self,
+        provider: str,
+        message: str,
+        status_code: int | None = None,
+        is_rate_limit: bool = False,
+    ):
         super().__init__(f"[{provider}] {message}")
         self.provider = provider
         self.status_code = status_code
@@ -122,9 +127,11 @@ class GroqProvider(BaseProvider):
             async with httpx.AsyncClient(timeout=timeout) as client:
                 response = await client.post(self.BASE_URL, json=payload, headers=headers)
         except httpx.TimeoutException as e:
-            raise ProviderUnavailableError(self.name, f"Request timed out after {timeout}s: {e}")
+            raise ProviderUnavailableError(
+                self.name, f"Request timed out after {timeout}s: {e}"
+            ) from e
         except httpx.RequestError as e:
-            raise ProviderUnavailableError(self.name, f"Connection error: {e}")
+            raise ProviderUnavailableError(self.name, f"Connection error: {e}") from e
 
         latency_ms = (time.perf_counter() - start_time) * 1000.0
 
@@ -133,9 +140,13 @@ class GroqProvider(BaseProvider):
         if response.status_code in (401, 403):
             raise ProviderAuthError(self.name, response.text)
         if response.status_code >= 500:
-            raise ProviderUnavailableError(self.name, f"Server error {response.status_code}: {response.text}")
+            raise ProviderUnavailableError(
+                self.name, f"Server error {response.status_code}: {response.text}"
+            )
         if response.status_code != 200:
-            raise ProviderError(self.name, f"Unexpected response {response.status_code}: {response.text}")
+            raise ProviderError(
+                self.name, f"Unexpected response {response.status_code}: {response.text}"
+            )
 
         data = response.json()
         choice = data["choices"][0]
@@ -195,9 +206,11 @@ class GeminiProvider(BaseProvider):
             async with httpx.AsyncClient(timeout=timeout) as client:
                 response = await client.post(self.BASE_URL, json=payload, headers=headers)
         except httpx.TimeoutException as e:
-            raise ProviderUnavailableError(self.name, f"Request timed out after {timeout}s: {e}")
+            raise ProviderUnavailableError(
+                self.name, f"Request timed out after {timeout}s: {e}"
+            ) from e
         except httpx.RequestError as e:
-            raise ProviderUnavailableError(self.name, f"Connection error: {e}")
+            raise ProviderUnavailableError(self.name, f"Connection error: {e}") from e
 
         latency_ms = (time.perf_counter() - start_time) * 1000.0
 
@@ -206,9 +219,13 @@ class GeminiProvider(BaseProvider):
         if response.status_code in (401, 403):
             raise ProviderAuthError(self.name, response.text)
         if response.status_code >= 500:
-            raise ProviderUnavailableError(self.name, f"Server error {response.status_code}: {response.text}")
+            raise ProviderUnavailableError(
+                self.name, f"Server error {response.status_code}: {response.text}"
+            )
         if response.status_code != 200:
-            raise ProviderError(self.name, f"Unexpected response {response.status_code}: {response.text}")
+            raise ProviderError(
+                self.name, f"Unexpected response {response.status_code}: {response.text}"
+            )
 
         data = response.json()
         choice = data["choices"][0]
@@ -235,13 +252,17 @@ class OpenRouterProvider(BaseProvider):
     name: str = "openrouter"
     BASE_URL = "https://openrouter.ai/api/v1/chat/completions"
 
-    def __init__(self, api_key: str | None = None, fallback_models: list[str] | None = None) -> None:
+    def __init__(
+        self, api_key: str | None = None, fallback_models: list[str] | None = None
+    ) -> None:
         settings = get_settings()
         self.api_key = api_key or settings.openrouter_api_key
         if fallback_models:
             self.fallback_models = fallback_models
         else:
-            self.fallback_models = [m.strip() for m in settings.openrouter_models.split(",") if m.strip()]
+            self.fallback_models = [
+                m.strip() for m in settings.openrouter_models.split(",") if m.strip()
+            ]
 
     async def call(
         self,
@@ -281,13 +302,17 @@ class OpenRouterProvider(BaseProvider):
                     response = await client.post(self.BASE_URL, json=payload, headers=headers)
             except (httpx.TimeoutException, httpx.RequestError) as e:
                 logger.warning("OpenRouter model %s connection failed: %s. Trying next...", cand, e)
-                last_exception = ProviderUnavailableError(self.name, f"Connection to {cand} failed: {e}")
+                last_exception = ProviderUnavailableError(
+                    self.name, f"Connection to {cand} failed: {e}"
+                )
                 continue
 
             latency_ms = (time.perf_counter() - start_time) * 1000.0
 
             if response.status_code == 429:
-                logger.warning("OpenRouter model %s rate-limited (429). Trying next fallback model...", cand)
+                logger.warning(
+                    "OpenRouter model %s rate-limited (429). Trying next fallback model...", cand
+                )
                 last_exception = ProviderRateLimitError(self.name, response.text)
                 continue
 
@@ -295,12 +320,18 @@ class OpenRouterProvider(BaseProvider):
                 raise ProviderAuthError(self.name, response.text)
 
             if response.status_code >= 500:
-                logger.warning("OpenRouter model %s 5xx error: %s. Trying next...", cand, response.status_code)
-                last_exception = ProviderUnavailableError(self.name, f"Model {cand} 5xx: {response.text}")
+                logger.warning(
+                    "OpenRouter model %s 5xx error: %s. Trying next...", cand, response.status_code
+                )
+                last_exception = ProviderUnavailableError(
+                    self.name, f"Model {cand} 5xx: {response.text}"
+                )
                 continue
 
             if response.status_code != 200:
-                last_exception = ProviderError(self.name, f"Model {cand} status {response.status_code}: {response.text}")
+                last_exception = ProviderError(
+                    self.name, f"Model {cand} status {response.status_code}: {response.text}"
+                )
                 continue
 
             data = response.json()

@@ -1,6 +1,6 @@
 """Unit test for the eval suite and case runner."""
 
-from eval.runner import load_eval_cases, run_eval_case, evaluate_compliance_rules
+from eval.runner import evaluate_compliance_rules, load_eval_cases, run_eval_case
 
 
 def test_eval_cases_loaded() -> None:

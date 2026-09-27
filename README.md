@@ -9,11 +9,11 @@ Architecture and build order are in [docs](docs/).
 
 ## Current scope and release status
 
-Phase 1 covers web chat and health insurance. The graph currently ends at Stage 4
-(`guardrail`). `escalate` and `explanation_report` are unimplemented stubs.
-Escalation is currently a flag; notification dispatch and delivery hold do not
-exist. The API still exposes draft/calculator data. The frontend is a design
-preview, and other product routes remain prototypes.
+Phase 1 covers web chat and health insurance. The current interim graph is
+`guardrail` → `escalate` → END. `explanation_report` remains a stub pending user
+review. Escalation notifies only a configured receiver and independently holds
+public delivery; the API suppresses report/draft/calculator details while held.
+The frontend is a design preview, and other product routes remain prototypes.
 
 Seeded policy terms and calculator inputs are **unverified scaffolding**. This
 includes 14% annual medical inflation, the INR 15 lakh metro / INR 10 lakh
@@ -26,8 +26,10 @@ Confidence is a completeness/compliance heuristic, not a calibrated probability.
 Explicit conflict flags are retained through Stage 3; this does not establish
 automatic contradiction detection or verified retrieval agreement.
 
-Stage 5 is paused for review. Next: implement `escalate` in its own reviewed
-session, then `explanation_report` and the delivery connection in a later session.
+Stage 5 is paused pending review of `escalate`. The local test receiver proves
+HTTP queueing and delivery hold only; the real advisor-queue destination is a
+Phase 2 task. After review, implement `explanation_report` in a separate session
+and run it unconditionally before `escalate`.
 Report generation must run regardless of escalation; delivery requires the gate.
 
 ## Local frontend

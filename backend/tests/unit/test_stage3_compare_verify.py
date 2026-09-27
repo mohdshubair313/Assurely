@@ -12,7 +12,6 @@ Tests:
 
 from __future__ import annotations
 
-import asyncio
 from datetime import date
 from decimal import Decimal
 from typing import Any
@@ -30,8 +29,8 @@ from app.graph.nodes.compare_verify import (
 from app.models.db.policy_document import PolicyDocument
 from app.models.db.policy_terms import PolicyTerms
 
-
 # ── Fixtures ─────────────────────────────────────────────────────────────────
+
 
 def _make_terms(**overrides: Any) -> PolicyTerms:
     """Build a minimal PolicyTerms mock object."""
@@ -41,16 +40,37 @@ def _make_terms(**overrides: Any) -> PolicyTerms:
     t.waiting_period_days_preexisting = overrides.get("waiting_period_days_preexisting", 1095)
     t.sum_insured_min = overrides.get("sum_insured_min", Decimal("500000"))
     t.sum_insured_max = overrides.get("sum_insured_max", Decimal("10000000"))
-    t.exclusions_json = overrides.get("exclusions_json", [
-        "Cosmetic or plastic surgery",
-        "Maternity expenses unless explicitly purchased as rider",
-        "Obesity/weight control treatments",
-    ])
-    t.premium_rate_table_json = overrides.get("premium_rate_table_json", {
-        "base_5L": {"age_18_35": 8200, "age_36_45": 12600, "age_46_55": 20400, "age_56_65": 34500},
-        "base_10L": {"age_18_35": 11400, "age_36_45": 17100, "age_46_55": 27800, "age_56_65": 46900},
-        "base_25L": {"age_18_35": 16200, "age_36_45": 24300, "age_46_55": 39500, "age_56_65": 65800},
-    })
+    t.exclusions_json = overrides.get(
+        "exclusions_json",
+        [
+            "Cosmetic or plastic surgery",
+            "Maternity expenses unless explicitly purchased as rider",
+            "Obesity/weight control treatments",
+        ],
+    )
+    t.premium_rate_table_json = overrides.get(
+        "premium_rate_table_json",
+        {
+            "base_5L": {
+                "age_18_35": 8200,
+                "age_36_45": 12600,
+                "age_46_55": 20400,
+                "age_56_65": 34500,
+            },
+            "base_10L": {
+                "age_18_35": 11400,
+                "age_36_45": 17100,
+                "age_46_55": 27800,
+                "age_56_65": 46900,
+            },
+            "base_25L": {
+                "age_18_35": 16200,
+                "age_36_45": 24300,
+                "age_46_55": 39500,
+                "age_56_65": 65800,
+            },
+        },
+    )
     t.effective_date = date(2024, 1, 1)
     t.expiry_date = None
     return t
@@ -66,6 +86,7 @@ def _make_doc(**overrides: Any) -> PolicyDocument:
 
 # ── Hidden Clause Detector ────────────────────────────────────────────────────
 
+
 class TestHiddenClauseDetector:
     """Unit tests for _detect_hidden_clauses."""
 
@@ -77,7 +98,8 @@ class TestHiddenClauseDetector:
         clauses = _detect_hidden_clauses(terms, doc, profile, [])
 
         ped_clauses = [
-            c for c in clauses
+            c
+            for c in clauses
             if "pre-existing" in c["clause"].lower() or "waiting period" in c["clause"].lower()
         ]
         assert len(ped_clauses) >= 1
@@ -159,6 +181,7 @@ class TestHiddenClauseDetector:
 
 # ── Transparency Scorer ───────────────────────────────────────────────────────
 
+
 class TestTransparencyScorer:
     """Unit tests for _compute_transparency_score."""
 
@@ -195,23 +218,34 @@ class TestTransparencyScorer:
 
 # ── Premium Lookup ────────────────────────────────────────────────────────────
 
+
 class TestPremiumLookup:
     """Unit tests for _lookup_premium."""
 
     _RATE_TABLE: dict[str, Any] = {
         "base_5L": {"age_18_35": 8200, "age_36_45": 12600, "age_46_55": 20400, "age_56_65": 34500},
-        "base_10L": {"age_18_35": 11400, "age_36_45": 17100, "age_46_55": 27800, "age_56_65": 46900},
-        "base_25L": {"age_18_35": 16200, "age_36_45": 24300, "age_46_55": 39500, "age_56_65": 65800},
+        "base_10L": {
+            "age_18_35": 11400,
+            "age_36_45": 17100,
+            "age_46_55": 27800,
+            "age_56_65": 46900,
+        },
+        "base_25L": {
+            "age_18_35": 16200,
+            "age_36_45": 24300,
+            "age_46_55": 39500,
+            "age_56_65": 65800,
+        },
     }
 
-    def test_age_30_5L_bracket(self) -> None:
+    def test_age_30_5l_bracket(self) -> None:
         """Age 30, target SI ≤ 7.5L → base_5L age_18_35 bracket."""
         result = _lookup_premium(self._RATE_TABLE, 500_000, 30)
         assert result is not None
         assert result["annual_premium_inr"] == 8200
         assert result["bracket"] == "₹5 Lakh"
 
-    def test_age_40_10L_bracket(self) -> None:
+    def test_age_40_10l_bracket(self) -> None:
         """Age 40, target SI in 7.5L-17.5L range → base_10L age_36_45."""
         result = _lookup_premium(self._RATE_TABLE, 1_000_000, 40)
         assert result is not None
@@ -237,6 +271,7 @@ class TestPremiumLookup:
 
 # ── Eligibility Helper ────────────────────────────────────────────────────────
 
+
 class TestEligibility:
     """Unit tests for _check_eligibility."""
 
@@ -256,6 +291,7 @@ class TestEligibility:
 
 # ── Full Node Integration ─────────────────────────────────────────────────────
 
+
 class TestCompareVerifyNode:
     """Integration tests for compare_verify_node using mocked DB."""
 
@@ -266,9 +302,7 @@ class TestCompareVerifyNode:
         doc2 = _make_doc(insurer="Care Health", product_name="Care Supreme")
         return [(terms1, doc1), (terms2, doc2)]
 
-    def _make_mock_session(
-        self, rows: list[tuple[PolicyTerms, PolicyDocument]]
-    ) -> MagicMock:
+    def _make_mock_session(self, rows: list[tuple[PolicyTerms, PolicyDocument]]) -> MagicMock:
         mock_result = MagicMock()
         mock_result.all.return_value = rows
         mock_session = AsyncMock()
@@ -287,9 +321,7 @@ class TestCompareVerifyNode:
             "session_id": "test-stage3-001",
             "user_profile": {"age": 35, "pre_existing_conditions": True, "city_tier": "1"},
             "retrieved_facts": [],
-            "calculator_outputs": {
-                "risk_analysis": {"risk_adjusted_sum_insured_inr": 1_500_000}
-            },
+            "calculator_outputs": {"risk_analysis": {"risk_adjusted_sum_insured_inr": 1_500_000}},
         }
 
         with patch("app.graph.nodes.compare_verify.AsyncSessionLocal", return_value=mock_session):
@@ -360,6 +392,7 @@ class TestCompareVerifyNode:
 
         import json
         import re
+
         # The compliance_note quotes 'best'/'top' to state they are NOT used;
         # only check user-facing output fields, not the meta-compliance disclaimer.
         draft = result["draft_output"]
@@ -380,7 +413,7 @@ class TestCompareVerifyNode:
 
     @pytest.mark.asyncio
     async def test_all_need_fit_entries_have_source(self) -> None:
-        """AGENTS.md rule 6: every numeric claim in need_fit_view must carry source + last_verified."""
+        """Every need_fit_view number must carry source + last_verified (AGENTS.md rule 6)."""
         rows = self._make_mock_db_result()
         mock_session = self._make_mock_session(rows)
 

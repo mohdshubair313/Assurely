@@ -14,7 +14,7 @@ All secrets are read from environment variables or a .env file.
 No defaults for secrets in production.
 """
 
-from pydantic import Field, SecretStr
+from pydantic import AliasChoices, Field, SecretStr
 from pydantic_settings import BaseSettings
 
 
@@ -24,8 +24,16 @@ class Settings(BaseSettings):
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8", "extra": "ignore"}
 
     # ── Environment ─────────────────────────────────────────────────────
-    environment: str = Field(default="development", description="development | staging | production")
+    environment: str = Field(
+        default="development", description="development | staging | production"
+    )
     log_level: str = Field(default="info", description="Logging level")
+
+    # Trusted identity provider. All three must be configured before any
+    # profile-memory or consent action can use a bearer token.
+    auth_issuer: str = ""
+    auth_audience: str = ""
+    auth_jwks_url: str = ""
 
     # ── Database ────────────────────────────────────────────────────────
     database_url: str = Field(
@@ -50,10 +58,10 @@ class Settings(BaseSettings):
     openrouter_api_key: str = Field(default="", description="OpenRouter API key")
 
     # ── LLM Models ──────────────────────────────────────────────────────
-    groq_model: str = Field(default="llama-3.3-70b-versatile", description="Default Groq model")
-    gemini_model: str = Field(default="gemini-2.5-flash", description="Default Gemini model")
+    groq_model: str = Field(default="openai/gpt-oss-20b", description="Default Groq model")
+    gemini_model: str = Field(default="gemini-3.8-flash", description="Default Gemini model")
     openrouter_models: str = Field(
-        default="meta-llama/llama-3.3-70b-instruct:free,google/gemma-2-9b-it:free,qwen/qwen-2.5-72b-instruct:free",
+        default="openrouter/free",
         description="Comma-separated OpenRouter fallback model IDs (free tier rotates)",
     )
 
@@ -68,7 +76,11 @@ class Settings(BaseSettings):
     # ── Langfuse (observability) ────────────────────────────────────────
     langfuse_public_key: str = Field(default="", description="Langfuse public key")
     langfuse_secret_key: str = Field(default="", description="Langfuse secret key")
-    langfuse_host: str = Field(default="http://localhost:3000", description="Langfuse host URL")
+    langfuse_host: str = Field(
+        default="https://cloud.langfuse.com",
+        validation_alias=AliasChoices("LANGFUSE_BASE_URL", "LANGFUSE_HOST"),
+        description="Langfuse base URL",
+    )
 
     # ── Timeouts ────────────────────────────────────────────────────────
     llm_timeout_seconds: float = Field(default=30.0, description="LLM call timeout")

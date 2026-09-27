@@ -13,11 +13,10 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
-import json
 import logging
-import uuid
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from decimal import Decimal
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -32,18 +31,18 @@ from app.models.db.user import User
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-SEED_POLICIES = [
+SEED_POLICIES: list[dict[str, Any]] = [
     {
         "insurer": "HDFC ERGO General Insurance",
         "product_name": "Optima Secure",
         "doc_url": "https://www.hdfcergo.com/policy-wordings/optima-secure.pdf",
         "version_hash": hashlib.sha256(b"hdfc-optima-secure-2024-v1").hexdigest(),
         "terms": {
-            "sum_insured_min": Decimal("500000.00"),     # 5 Lakhs
-            "sum_insured_max": Decimal("20000000.00"),   # 2 Crores
+            "sum_insured_min": Decimal("500000.00"),  # 5 Lakhs
+            "sum_insured_max": Decimal("20000000.00"),  # 2 Crores
             "entry_age_min": 18,
             "entry_age_max": 65,
-            "waiting_period_days_preexisting": 1095,      # 36 months / 3 years
+            "waiting_period_days_preexisting": 1095,  # 36 months / 3 years
             "exclusions_json": [
                 "Investigation & evaluation admission without active treatment",
                 "Rest cure, rehabilitation and respite care",
@@ -54,9 +53,24 @@ SEED_POLICIES = [
                 "Maternity expenses unless explicitly purchased as rider",
             ],
             "premium_rate_table_json": {
-                "base_5L": {"age_18_35": 9400, "age_36_45": 14100, "age_46_55": 22300, "age_56_65": 38200},
-                "base_10L": {"age_18_35": 12800, "age_36_45": 18900, "age_46_55": 30500, "age_56_65": 51000},
-                "base_25L": {"age_18_35": 18500, "age_36_45": 27200, "age_46_55": 43800, "age_56_65": 72500},
+                "base_5L": {
+                    "age_18_35": 9400,
+                    "age_36_45": 14100,
+                    "age_46_55": 22300,
+                    "age_56_65": 38200,
+                },
+                "base_10L": {
+                    "age_18_35": 12800,
+                    "age_36_45": 18900,
+                    "age_46_55": 30500,
+                    "age_56_65": 51000,
+                },
+                "base_25L": {
+                    "age_18_35": 18500,
+                    "age_36_45": 27200,
+                    "age_46_55": 43800,
+                    "age_56_65": 72500,
+                },
             },
             "effective_date": date(2024, 1, 1),
             "expiry_date": None,
@@ -68,11 +82,11 @@ SEED_POLICIES = [
         "doc_url": "https://www.careinsurance.com/policy-wordings/care-supreme.pdf",
         "version_hash": hashlib.sha256(b"care-supreme-2024-v1").hexdigest(),
         "terms": {
-            "sum_insured_min": Decimal("500000.00"),     # 5 Lakhs
-            "sum_insured_max": Decimal("10000000.00"),   # 1 Crore
+            "sum_insured_min": Decimal("500000.00"),  # 5 Lakhs
+            "sum_insured_max": Decimal("10000000.00"),  # 1 Crore
             "entry_age_min": 18,
             "entry_age_max": 99,
-            "waiting_period_days_preexisting": 1095,      # 36 months / 3 years
+            "waiting_period_days_preexisting": 1095,  # 36 months / 3 years
             "exclusions_json": [
                 "Cosmetic surgery or aesthetic treatments",
                 "Dental treatment or surgery unless necessitated by accidental injury",
@@ -81,9 +95,24 @@ SEED_POLICIES = [
                 "Self-inflicted injuries",
             ],
             "premium_rate_table_json": {
-                "base_5L": {"age_18_35": 8200, "age_36_45": 12600, "age_46_55": 20400, "age_56_65": 34500},
-                "base_10L": {"age_18_35": 11400, "age_36_45": 17100, "age_46_55": 27800, "age_56_65": 46900},
-                "base_25L": {"age_18_35": 16200, "age_36_45": 24300, "age_46_55": 39500, "age_56_65": 65800},
+                "base_5L": {
+                    "age_18_35": 8200,
+                    "age_36_45": 12600,
+                    "age_46_55": 20400,
+                    "age_56_65": 34500,
+                },
+                "base_10L": {
+                    "age_18_35": 11400,
+                    "age_36_45": 17100,
+                    "age_46_55": 27800,
+                    "age_56_65": 46900,
+                },
+                "base_25L": {
+                    "age_18_35": 16200,
+                    "age_36_45": 24300,
+                    "age_46_55": 39500,
+                    "age_56_65": 65800,
+                },
             },
             "effective_date": date(2024, 1, 1),
             "expiry_date": None,
@@ -95,11 +124,11 @@ SEED_POLICIES = [
         "doc_url": "https://www.starhealth.in/policy-wordings/star-comprehensive.pdf",
         "version_hash": hashlib.sha256(b"star-comprehensive-2024-v1").hexdigest(),
         "terms": {
-            "sum_insured_min": Decimal("500000.00"),     # 5 Lakhs
-            "sum_insured_max": Decimal("10000000.00"),   # 1 Crore
+            "sum_insured_min": Decimal("500000.00"),  # 5 Lakhs
+            "sum_insured_max": Decimal("10000000.00"),  # 1 Crore
             "entry_age_min": 18,
             "entry_age_max": 65,
-            "waiting_period_days_preexisting": 1095,      # 36 months / 3 years
+            "waiting_period_days_preexisting": 1095,  # 36 months / 3 years
             "exclusions_json": [
                 "Cosmetic and plastic surgery",
                 "Treatment for alcoholism, drug or substance abuse",
@@ -108,9 +137,24 @@ SEED_POLICIES = [
                 "Stem cell therapy and non-allopathic treatments without accreditation",
             ],
             "premium_rate_table_json": {
-                "base_5L": {"age_18_35": 8900, "age_36_45": 13400, "age_46_55": 21500, "age_56_65": 36800},
-                "base_10L": {"age_18_35": 12100, "age_36_45": 18200, "age_46_55": 29400, "age_56_65": 49800},
-                "base_25L": {"age_18_35": 17400, "age_36_45": 26100, "age_46_55": 42100, "age_56_65": 70200},
+                "base_5L": {
+                    "age_18_35": 8900,
+                    "age_36_45": 13400,
+                    "age_46_55": 21500,
+                    "age_56_65": 36800,
+                },
+                "base_10L": {
+                    "age_18_35": 12100,
+                    "age_36_45": 18200,
+                    "age_46_55": 29400,
+                    "age_56_65": 49800,
+                },
+                "base_25L": {
+                    "age_18_35": 17400,
+                    "age_36_45": 26100,
+                    "age_46_55": 42100,
+                    "age_56_65": 70200,
+                },
             },
             "effective_date": date(2024, 1, 1),
             "expiry_date": None,
@@ -160,9 +204,9 @@ async def seed_data(session: AsyncSession) -> dict[str, int]:
 
     # 2. Seed Customer User
     seed_phone_hash = hashlib.sha256(b"+919876543210").hexdigest()
-    stmt = select(User).where(User.phone_hash == seed_phone_hash)
-    res = await session.execute(stmt)
-    user = res.scalar_one_or_none()
+    user_stmt = select(User).where(User.phone_hash == seed_phone_hash)
+    user_result = await session.execute(user_stmt)
+    user = user_result.scalar_one_or_none()
 
     if not user:
         user = User(
@@ -197,13 +241,15 @@ async def seed_data(session: AsyncSession) -> dict[str, int]:
         audit_entry = AuditLog(
             session_id=user_session.id,
             node_name="needs_intake",
-            input_hash=hashlib.sha256(b'{"user_message": "Looking for health insurance for family"}').hexdigest(),
+            input_hash=hashlib.sha256(
+                b'{"user_message": "Looking for health insurance for family"}'
+            ).hexdigest(),
             output_hash=hashlib.sha256(b'{"missing_fields": ["age", "city_tier"]}').hexdigest(),
             sources_json=[
                 {
                     "source": "HDFC ERGO Optima Secure Policy Wordings 2024",
                     "clause": "Entry Age & Pre-existing Waiting Period",
-                    "retrieved_at": datetime.now(timezone.utc).isoformat(),
+                    "retrieved_at": datetime.now(UTC).isoformat(),
                 }
             ],
         )

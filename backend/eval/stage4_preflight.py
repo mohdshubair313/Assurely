@@ -3,28 +3,38 @@
 Run from backend: python -m eval.stage4_preflight
 Scores measure the current heuristic, not a calibrated probability.
 """
+
 import asyncio
-from copy import deepcopy
-from datetime import datetime, timezone
 import json
+from copy import deepcopy
+from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 from app.graph.nodes.guardrail import calculate_confidence_score, guardrail_node
 from app.graph.state import create_initial_state
 
 
 async def main() -> None:
-    draft = {
-        "need_fit_view": [{
-            "product_name": "Synthetic incomplete policy",
-            "eligible": True,
-            "sum_insured_range_inr": {"min": 500000, "max": 10000000},
-        }],
+    draft: dict[str, Any] = {
+        "need_fit_view": [
+            {
+                "product_name": "Synthetic incomplete policy",
+                "eligible": True,
+                "sum_insured_range_inr": {"min": 500000, "max": 10000000},
+            }
+        ],
         "cited_facts": [
-            {"claim": "Synthetic policy waiting period is 24 months",
-             "source": "Synthetic source A", "conflict": True},
-            {"claim": "Synthetic policy waiting period is 36 months",
-             "source": "Synthetic source B", "conflict": True},
+            {
+                "claim": "Synthetic policy waiting period is 24 months",
+                "source": "Synthetic source A",
+                "conflict": True,
+            },
+            {
+                "claim": "Synthetic policy waiting period is 36 months",
+                "source": "Synthetic source B",
+                "conflict": True,
+            },
         ],
     }
     profile = {"age": 30}
@@ -50,13 +60,17 @@ async def main() -> None:
     control_policy["entry_age_window"].update(min=18, max=65)
     control_policy["waiting_period_days_preexisting"]["value"] = 1095
     control_policy["premium_estimate"] = {**provenance, "annual_premium_inr": 10000}
-    complete_profile = {"age": 30, "city_tier": "tier_1", "dependents": 0,
-                        "pre_existing_conditions": False}
+    complete_profile = {
+        "age": 30,
+        "city_tier": "tier_1",
+        "dependents": 0,
+        "pre_existing_conditions": False,
+    }
     conflict_only = calculate_confidence_score(control, [], complete_profile)
     control["cited_facts"] = [{**provenance, "claim": "Synthetic consistent wording"}]
     complete_control = calculate_confidence_score(control, [], complete_profile)
     record = {
-        "executed_at": datetime.now(timezone.utc).isoformat(),
+        "executed_at": datetime.now(UTC).isoformat(),
         "case": "Incomplete profile, missing policy fields, explicit conflicting evidence",
         "synthetic_fixture": True,
         "profile": profile,
@@ -67,7 +81,10 @@ async def main() -> None:
         "sourced_but_incomplete_guardrail_result": sourced_result,
         "complete_profile_and_terms_with_conflict_score": conflict_only,
         "complete_consistent_control_score": complete_control,
-        "limitation": "Heuristic only. Explicit conflict flag is supplied by this fixture; this does not prove automatic contradiction detection.",
+        "limitation": (
+            "Heuristic only. Explicit conflict flag is supplied by this fixture; "
+            "this does not prove automatic contradiction detection."
+        ),
     }
     assert score == 0.46 and score < 0.70
     assert result["escalation"] is True and result["approved"] is False

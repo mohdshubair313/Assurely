@@ -13,7 +13,7 @@ Features:
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from app.core.config import get_settings
@@ -29,8 +29,9 @@ DEFAULT_SEEDED_CLAUSES: list[dict[str, Any]] = [
         "uin": "HDFHLIP21557V022021",
         "section": "Section 3.1 — 4X Coverage Benefit",
         "content": (
-            "Under the Secure Benefit, the base sum insured doubles to 2X from day 1 for hospitalization. "
-            "Plus Benefit adds 50% per claim-free year up to 100%, and Restore Benefit provides 100% instant recharge."
+            "Under the Secure Benefit, the base sum insured doubles to 2X from day 1 "
+            "for hospitalization. Plus Benefit adds 50% per claim-free year up to 100%, "
+            "and Restore Benefit provides 100% instant recharge."
         ),
         "source": "HDFC ERGO Optima Secure Policy Wording Section 3.1 (UIN: HDFHLIP21557V022021)",
         "url": "https://www.hdfcergo.com/policy-wordings/optima-secure.pdf",
@@ -72,7 +73,8 @@ DEFAULT_SEEDED_CLAUSES: list[dict[str, Any]] = [
         "uin": "CHIHLIP22158V012122",
         "section": "Section 2.1 — Unlimited Automatic Recharge",
         "content": (
-            "Provides unlimited automatic restoration of sum insured for same or different illnesses "
+            "Provides unlimited automatic restoration of sum insured "
+            "for same or different illnesses "
             "during the policy year upon exhaustion of base sum insured."
         ),
         "source": "Care Supreme Policy Wording Section 2.1 (UIN: CHIHLIP22158V012122)",
@@ -124,7 +126,7 @@ class PolicyVectorStore:
     def _init_chroma(self) -> None:
         """Attempt to connect to ChromaDB container."""
         try:
-            import chromadb  # type: ignore[import-untyped]
+            import chromadb
 
             self._client = chromadb.HttpClient(
                 host=self.settings.chroma_host,
@@ -137,7 +139,11 @@ class PolicyVectorStore:
             # Seed default clauses if empty
             if self._collection.count() == 0:
                 self._seed_default_clauses()
-            logger.info("Connected to ChromaDB at %s:%s", self.settings.chroma_host, self.settings.chroma_port)
+            logger.info(
+                "Connected to ChromaDB at %s:%s",
+                self.settings.chroma_host,
+                self.settings.chroma_port,
+            )
         except Exception as e:
             logger.warning("ChromaDB unavailable (%s); using in-memory clause store", e)
             self._client = None
@@ -175,20 +181,22 @@ class PolicyVectorStore:
                 )
                 docs = query_res.get("documents", [[]])[0]
                 metas = query_res.get("metadatas", [[]])[0]
-                for doc, meta in zip(docs, metas):
+                for doc, meta in zip(docs, metas, strict=True):
                     results.append(
                         {
                             "claim": doc,
-                            "source": meta.get("source", "Insurer Policy Wording"),
+                            "source": meta.get("source", ""),
                             "url": meta.get("url", ""),
-                            "last_verified": meta.get("last_verified", "2024-01-01"),
-                            "retrieved_at": datetime.now(timezone.utc).isoformat(),
+                            "last_verified": meta.get("last_verified", ""),
+                            "retrieved_at": datetime.now(UTC).isoformat(),
                         }
                     )
                 if results:
                     return results
             except Exception as e:
-                logger.warning("Chroma similarity query failed: %s; falling back to memory store", e)
+                logger.warning(
+                    "Chroma similarity query failed: %s; falling back to memory store", e
+                )
 
         # In-memory keyword match fallback
         q_tokens = [w.lower() for w in query.split() if len(w) > 3]
@@ -210,7 +218,7 @@ class PolicyVectorStore:
                     "source": item["source"],
                     "url": item["url"],
                     "last_verified": item["last_verified"],
-                    "retrieved_at": datetime.now(timezone.utc).isoformat(),
+                    "retrieved_at": datetime.now(UTC).isoformat(),
                 }
             )
         return results

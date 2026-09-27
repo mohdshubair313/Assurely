@@ -1,17 +1,17 @@
 """Unit tests for the LLM fallback chain and rate limiter."""
 
-import pytest
 from unittest.mock import AsyncMock, patch
 
-from app.core.rate_limiter import RateLimiter, RateLimitExceededError, rate_limited
-from app.llm.fallback_chain import llm_call, get_providers, AllProvidersFailedError
+import pytest
+
+from app.core.rate_limiter import RateLimiter, RateLimitExceededError
+from app.llm.fallback_chain import get_providers, llm_call
 from app.llm.providers import (
-    GroqProvider,
     GeminiProvider,
-    OpenRouterProvider,
+    GroqProvider,
     LLMResult,
+    OpenRouterProvider,
     ProviderRateLimitError,
-    ProviderUnavailableError,
 )
 
 
@@ -57,10 +57,11 @@ async def test_fallback_when_primary_rate_limited() -> None:
         )
     )
 
-    with patch.object(GroqProvider, "call", mock_groq_call), \
-         patch.object(GeminiProvider, "call", mock_gemini_call), \
-         patch("app.llm.fallback_chain.get_settings") as mock_settings:
-
+    with (
+        patch.object(GroqProvider, "call", mock_groq_call),
+        patch.object(GeminiProvider, "call", mock_gemini_call),
+        patch("app.llm.fallback_chain.get_settings") as mock_settings,
+    ):
         # Configure settings to have both API keys and 0 retries for fast test
         mock_settings.return_value.groq_api_key = "gsk_test"
         mock_settings.return_value.gemini_api_key = "gem_test"
@@ -83,9 +84,49 @@ async def test_fallback_when_primary_rate_limited() -> None:
 
 
 @pytest.mark.asyncio
+async def test_fallback_when_primary_returns_empty_content() -> None:
+    """An empty successful HTTP response is still a failed provider attempt."""
+    empty_groq_call = AsyncMock(
+        return_value=LLMResult(content=" \n", provider="groq", model="empty-model", total_tokens=10)
+    )
+    valid_gemini_call = AsyncMock(
+        return_value=LLMResult(
+            content="Grounded fallback response",
+            provider="gemini",
+            model="gemini-model",
+            total_tokens=12,
+        )
+    )
+    with (
+        patch.object(GroqProvider, "call", empty_groq_call),
+        patch.object(GeminiProvider, "call", valid_gemini_call),
+        patch("app.llm.fallback_chain.get_settings") as mock_settings,
+    ):
+        mock_settings.return_value.groq_api_key = "gsk_test"
+        mock_settings.return_value.gemini_api_key = "gem_test"
+        mock_settings.return_value.openrouter_api_key = "or_test"
+        mock_settings.return_value.llm_max_retries = 0
+        mock_settings.return_value.llm_timeout_seconds = 5.0
+        mock_settings.return_value.rate_limit_calls_per_minute = 100
+        mock_settings.return_value.rate_limit_tokens_per_session = 50000
+
+        result = await llm_call(
+            messages=[{"role": "user", "content": "test empty response fallback"}],
+            task_type="general",
+            session_id="fallback-empty-test-session",
+        )
+
+    assert result.provider == "gemini"
+    assert result.content == "Grounded fallback response"
+    assert empty_groq_call.call_count == 1
+    assert valid_gemini_call.call_count == 1
+
+
+@pytest.mark.asyncio
 async def test_rate_limiter_calls_per_minute() -> None:
     """Verify rate limiter throws RateLimitExceededError when CPM exceeded."""
     import uuid
+
     test_session = f"cpm-test-{uuid.uuid4()}"
     limiter = RateLimiter()
     limiter._memory_backend.reset(test_session)
@@ -109,6 +150,7 @@ async def test_rate_limiter_calls_per_minute() -> None:
 async def test_rate_limiter_tokens_per_session() -> None:
     """Verify rate limiter throws RateLimitExceededError when token budget exceeded."""
     import uuid
+
     test_session = f"token-test-{uuid.uuid4()}"
     limiter = RateLimiter()
     limiter._memory_backend.reset(test_session)
@@ -124,4 +166,3 @@ async def test_rate_limiter_tokens_per_session() -> None:
             await limiter.record_tokens(test_session, 60)
 
         assert "budget exhausted" in str(exc_info.value)
-

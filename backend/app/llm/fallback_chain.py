@@ -7,7 +7,7 @@ The rate_limiter decorator from ``app.core.rate_limiter`` attaches here,
 gating every call by session_id token and call budget (LLD § 9).
 
 Responsibilities:
-  - Select primary provider based on task_type (Groq for general/intake, Gemini for long-context/guardrail).
+  - Select provider by task_type (Groq for general/intake; Gemini for long-context/guardrail).
   - On rate limit or transient error, retry with backoff, then fall through to next provider.
   - On OpenRouter, try rotating candidate free models.
   - Log provider swaps and latency for observability.
@@ -22,6 +22,7 @@ from typing import Any
 
 from app.core.config import get_settings
 from app.core.rate_limiter import rate_limited
+from app.core.tracing import observation, record_llm_metadata
 from app.llm.providers import (
     BaseProvider,
     GeminiProvider,
@@ -44,21 +45,25 @@ class AllProvidersFailedError(Exception):
         self.errors = errors
 
 
-def get_providers(task_type: str = "general", preferred_provider: str | None = None) -> list[BaseProvider]:
+def get_providers(
+    task_type: str = "general", preferred_provider: str | None = None
+) -> list[BaseProvider]:
     """Return ordered list of providers for the given task.
 
     Task types:
       - "general", "intake", "router": Groq primary -> Gemini -> OpenRouter
       - "long_context", "compare_verify", "guardrail": Gemini primary -> Groq -> OpenRouter
     """
-    settings = get_settings()
-
     groq = GroqProvider()
     gemini = GeminiProvider()
     openrouter = OpenRouterProvider()
 
     if preferred_provider:
-        name_map = {"groq": groq, "gemini": gemini, "openrouter": openrouter}
+        name_map: dict[str, BaseProvider] = {
+            "groq": groq,
+            "gemini": gemini,
+            "openrouter": openrouter,
+        }
         if preferred_provider in name_map:
             primary = name_map[preferred_provider]
             others = [p for p in [groq, gemini, openrouter] if p != primary]
@@ -91,7 +96,7 @@ async def llm_call(
         temperature: Generation temperature (0.0 - 1.0).
         max_tokens: Maximum tokens in completion.
         preferred_provider: Force specific provider as primary ("groq"|"gemini"|"openrouter").
-        mock_response: If provided, bypasses network calls and returns mock result (for offline testing).
+        mock_response: Bypass network calls and return a mock result for offline testing.
 
     Returns:
         LLMResult with response content, provider/model used, and token stats.
@@ -132,7 +137,9 @@ async def llm_call(
             attempt_errors.append({"provider": provider.name, "error": "GEMINI_API_KEY not set"})
             continue
         if isinstance(provider, OpenRouterProvider) and not settings.openrouter_api_key:
-            attempt_errors.append({"provider": provider.name, "error": "OPENROUTER_API_KEY not set"})
+            attempt_errors.append(
+                {"provider": provider.name, "error": "OPENROUTER_API_KEY not set"}
+            )
             continue
 
         for attempt in range(max_retries + 1):
@@ -145,12 +152,42 @@ async def llm_call(
                     task_type,
                     session_id,
                 )
-                result = await provider.call(
-                    messages=formatted_messages,
-                    temperature=temperature,
-                    max_tokens=max_tokens,
-                    timeout=timeout,
+                prompt_char_count = sum(
+                    len(message.get("content", "")) for message in formatted_messages
                 )
+                with observation(
+                    "call-llm-provider",
+                    as_type="generation",
+                    input={
+                        "task_type": task_type,
+                        "message_count": len(formatted_messages),
+                        "prompt_char_count": prompt_char_count,
+                    },
+                    metadata={"provider": provider.name, "attempt": attempt + 1},
+                    model_parameters={"temperature": temperature, "max_tokens": max_tokens},
+                ) as generation:
+                    result = await provider.call(
+                        messages=formatted_messages,
+                        temperature=temperature,
+                        max_tokens=max_tokens,
+                        timeout=timeout,
+                    )
+                    if not result.content.strip():
+                        raise ProviderError(provider.name, "Provider returned empty content")
+                    if generation is not None:
+                        generation.update(
+                            model=result.model,
+                            output={"finish_reason": result.finish_reason},
+                            usage_details={
+                                "input": result.prompt_tokens,
+                                "output": result.completion_tokens,
+                                "total": result.total_tokens,
+                            },
+                            metadata={
+                                "provider": result.provider,
+                                "latency_ms": result.latency_ms,
+                            },
+                        )
                 logger.info(
                     "LLM call succeeded: provider=%s model=%s tokens=%d latency=%.1fms",
                     result.provider,
@@ -158,6 +195,7 @@ async def llm_call(
                     result.total_tokens,
                     result.latency_ms,
                 )
+                record_llm_metadata(result.provider, result.model, task_type, system_prompt)
                 return result
 
             except ProviderRateLimitError as e:
@@ -172,12 +210,16 @@ async def llm_call(
                     backoff = 1.5 * (2**attempt)
                     await asyncio.sleep(backoff)
                 else:
-                    attempt_errors.append({"provider": provider.name, "error": str(e), "rate_limited": True})
+                    attempt_errors.append(
+                        {"provider": provider.name, "error": str(e), "rate_limited": True}
+                    )
                     break  # Try next provider in fallback chain
 
             except ProviderAuthError as e:
                 logger.error("Provider %s auth error: %s. Skipping provider.", provider.name, e)
-                attempt_errors.append({"provider": provider.name, "error": str(e), "auth_error": True})
+                attempt_errors.append(
+                    {"provider": provider.name, "error": str(e), "auth_error": True}
+                )
                 break  # Don't retry auth errors, proceed to next provider
 
             except ProviderError as e:

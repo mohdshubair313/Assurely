@@ -25,12 +25,11 @@ from __future__ import annotations
 
 import logging
 import math
-from datetime import date, datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any, cast
 
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import AsyncSessionLocal
 from app.graph.state import SessionState
@@ -41,7 +40,7 @@ logger = logging.getLogger(__name__)
 
 # ── source / provenance label used on every deterministic claim ──────────────
 _DB_SOURCE = "policy_terms table (InsuranceAI DB)"
-_LAST_VERIFIED = "2024-01-01"   # date of seed data; must be updated when real docs are loaded
+_LAST_VERIFIED = "2024-01-01"  # date of seed data; must be updated when real docs are loaded
 
 
 # ── Hidden Clause Detector ────────────────────────────────────────────────────
@@ -50,17 +49,17 @@ _LAST_VERIFIED = "2024-01-01"   # date of seed data; must be updated when real d
 # Grouped by profile attribute that triggers relevance.
 _EXCLUSION_TRIGGERS: list[tuple[str, list[str]]] = [
     # (profile attribute or condition → list of exclusion text substrings to flag)
-    ("pre_existing_conditions",  ["pre-existing", "pre existing", "preexisting", "waiting period"]),
-    ("maternity",                ["maternity", "obstetric", "pregnancy"]),
-    ("obesity",                  ["obesity", "weight control"]),
-    ("alcohol",                  ["alcohol", "substance abuse", "drug or substance"]),
-    ("congenital",               ["congenital"]),
-    ("dental",                   ["dental"]),
-    ("cosmetic",                 ["cosmetic", "plastic surgery", "aesthetic"]),
-    ("adventure_sports",         ["hazardous", "adventure sports"]),
-    ("stem_cell",                ["stem cell"]),
-    ("experimental",             ["experimental", "unproven"]),
-    ("rehabilitation",           ["rehabilitation", "respite care"]),
+    ("pre_existing_conditions", ["pre-existing", "pre existing", "preexisting", "waiting period"]),
+    ("maternity", ["maternity", "obstetric", "pregnancy"]),
+    ("obesity", ["obesity", "weight control"]),
+    ("alcohol", ["alcohol", "substance abuse", "drug or substance"]),
+    ("congenital", ["congenital"]),
+    ("dental", ["dental"]),
+    ("cosmetic", ["cosmetic", "plastic surgery", "aesthetic"]),
+    ("adventure_sports", ["hazardous", "adventure sports"]),
+    ("stem_cell", ["stem cell"]),
+    ("experimental", ["experimental", "unproven"]),
+    ("rehabilitation", ["rehabilitation", "respite care"]),
 ]
 
 # Room-rent sub-limit patterns (phrases that indicate a cap).
@@ -90,54 +89,74 @@ def _detect_hidden_clauses(
     # 1. Eligibility check — age boundary (deterministic DB lookup)
     user_age: int = int(user_profile.get("age", 0))
     if user_age and terms.entry_age_min and user_age < terms.entry_age_min:
-        flagged.append({
-            "clause": f"Entry age minimum is {terms.entry_age_min} years; user is {user_age}",
-            "severity": "high",
-            "reason": "User does not meet minimum entry age for this policy.",
-            "source": _DB_SOURCE,
-            "last_verified": _LAST_VERIFIED,
-        })
+        flagged.append(
+            {
+                "clause": f"Entry age minimum is {terms.entry_age_min} years; user is {user_age}",
+                "severity": "high",
+                "reason": "User does not meet minimum entry age for this policy.",
+                "source": _DB_SOURCE,
+                "last_verified": _LAST_VERIFIED,
+            }
+        )
     if user_age and terms.entry_age_max and user_age > terms.entry_age_max:
-        flagged.append({
-            "clause": f"Entry age maximum is {terms.entry_age_max} years; user is {user_age}",
-            "severity": "high",
-            "reason": "User exceeds maximum entry age for this policy.",
-            "source": _DB_SOURCE,
-            "last_verified": _LAST_VERIFIED,
-        })
+        flagged.append(
+            {
+                "clause": f"Entry age maximum is {terms.entry_age_max} years; user is {user_age}",
+                "severity": "high",
+                "reason": "User exceeds maximum entry age for this policy.",
+                "source": _DB_SOURCE,
+                "last_verified": _LAST_VERIFIED,
+            }
+        )
 
     # 2. Pre-existing disease waiting period (always flag if user has PED)
     has_ped = bool(user_profile.get("pre_existing_conditions"))
     if has_ped and terms.waiting_period_days_preexisting:
         months = math.ceil(terms.waiting_period_days_preexisting / 30)
-        flagged.append({
-            "clause": f"Pre-existing disease waiting period: {terms.waiting_period_days_preexisting} days ({months} months)",
-            "severity": "high",
-            "reason": (
-                "User has declared pre-existing conditions. Coverage for those "
-                f"conditions will not apply for {months} months from policy inception."
-            ),
-            "source": _DB_SOURCE,
-            "last_verified": _LAST_VERIFIED,
-        })
+        flagged.append(
+            {
+                "clause": (
+                    "Pre-existing disease waiting period: "
+                    f"{terms.waiting_period_days_preexisting} days ({months} months)"
+                ),
+                "severity": "high",
+                "reason": (
+                    "User has declared pre-existing conditions. Coverage for those "
+                    f"conditions will not apply for {months} months from policy inception."
+                ),
+                "source": _DB_SOURCE,
+                "last_verified": _LAST_VERIFIED,
+            }
+        )
     elif terms.waiting_period_days_preexisting:
         # Flag even without declared PED — medium severity
         months = math.ceil(terms.waiting_period_days_preexisting / 30)
-        flagged.append({
-            "clause": f"Pre-existing disease waiting period: {months} months",
-            "severity": "medium",
-            "reason": "Applies to any pre-existing conditions diagnosed before policy start.",
-            "source": _DB_SOURCE,
-            "last_verified": _LAST_VERIFIED,
-        })
+        flagged.append(
+            {
+                "clause": f"Pre-existing disease waiting period: {months} months",
+                "severity": "medium",
+                "reason": "Applies to any pre-existing conditions diagnosed before policy start.",
+                "source": _DB_SOURCE,
+                "last_verified": _LAST_VERIFIED,
+            }
+        )
 
     # 3. Exclusion string matching against profile signals
     profile_signals: set[str] = set()
     if has_ped:
         profile_signals.add("pre_existing_conditions")
-    for attr in ("maternity", "obesity", "alcohol", "congenital", "dental",
-                 "cosmetic", "adventure_sports", "stem_cell", "experimental",
-                 "rehabilitation"):
+    for attr in (
+        "maternity",
+        "obesity",
+        "alcohol",
+        "congenital",
+        "dental",
+        "cosmetic",
+        "adventure_sports",
+        "stem_cell",
+        "experimental",
+        "rehabilitation",
+    ):
         if user_profile.get(attr):
             profile_signals.add(attr)
 
@@ -150,47 +169,54 @@ def _detect_hidden_clauses(
                 break
         if matched_attr is None:
             # Unknown/generic exclusion — still flag at low severity
-            flagged.append({
-                "clause": exclusion_text,
-                "severity": "low",
-                "reason": "Standard policy exclusion. Review whether it affects your use case.",
-                "source": f"{doc.insurer} – {doc.product_name} policy wordings",
-                "last_verified": _LAST_VERIFIED,
-            })
+            flagged.append(
+                {
+                    "clause": exclusion_text,
+                    "severity": "low",
+                    "reason": "Standard policy exclusion. Review whether it affects your use case.",
+                    "source": f"{doc.insurer} – {doc.product_name} policy wordings",
+                    "last_verified": _LAST_VERIFIED,
+                }
+            )
         else:
             severity = "high" if matched_attr in profile_signals else "low"
-            flagged.append({
-                "clause": exclusion_text,
-                "severity": severity,
-                "reason": (
-                    f"Directly relevant to user's profile ({matched_attr.replace('_', ' ')})."
-                    if matched_attr in profile_signals
-                    else "Policy exclusion — applies under specific circumstances."
-                ),
-                "source": f"{doc.insurer} – {doc.product_name} policy wordings",
-                "last_verified": _LAST_VERIFIED,
-            })
+            flagged.append(
+                {
+                    "clause": exclusion_text,
+                    "severity": severity,
+                    "reason": (
+                        f"Directly relevant to user's profile ({matched_attr.replace('_', ' ')})."
+                        if matched_attr in profile_signals
+                        else "Policy exclusion — applies under specific circumstances."
+                    ),
+                    "source": f"{doc.insurer} – {doc.product_name} policy wordings",
+                    "last_verified": _LAST_VERIFIED,
+                }
+            )
 
     # 4. Room-rent sub-limit detection from retrieved RAG facts
     for fact in retrieved_facts:
         claim_text: str = str(fact.get("claim", "")).lower()
         if any(kw in claim_text for kw in _ROOM_RENT_KEYWORDS):
-            flagged.append({
-                "clause": fact.get("claim", ""),
-                "severity": "medium",
-                "reason": (
-                    "Room-rent sub-limits can cause proportionate deductions across all "
-                    "in-hospital bills (anaesthesia, medicines, doctor fees) even if the "
-                    "overall sum insured is not exhausted."
-                ),
-                "source": fact.get("source", "RAG retrieval"),
-                "last_verified": fact.get("last_verified", _LAST_VERIFIED),
-            })
+            flagged.append(
+                {
+                    "clause": fact.get("claim", ""),
+                    "severity": "medium",
+                    "reason": (
+                        "Room-rent sub-limits can cause proportionate deductions across all "
+                        "in-hospital bills (anaesthesia, medicines, doctor fees) even if the "
+                        "overall sum insured is not exhausted."
+                    ),
+                    "source": fact.get("source", ""),
+                    "last_verified": fact.get("last_verified", ""),
+                }
+            )
 
     return flagged
 
 
 # ── Transparency Scorer ───────────────────────────────────────────────────────
+
 
 def _compute_transparency_score(
     hidden_clauses: list[dict[str, Any]],
@@ -206,7 +232,8 @@ def _compute_transparency_score(
         about which policy is "better" (AGENTS.md rule 1).
 
     Deductions:
-        -25 per high-severity hidden clause (eligibility block, PED waiting, high-relevance exclusion)
+        -25 per high-severity hidden clause
+            (eligibility block, PED waiting, high-relevance exclusion)
         -10 per medium-severity hidden clause
         -3  per low-severity hidden clause
     Bonuses:
@@ -230,8 +257,10 @@ def _compute_transparency_score(
         score += 5
     if terms.sum_insured_max is not None and terms.sum_insured_max >= Decimal("20000000"):
         score += 5
-    if (terms.waiting_period_days_preexisting is not None
-            and terms.waiting_period_days_preexisting <= 730):
+    if (
+        terms.waiting_period_days_preexisting is not None
+        and terms.waiting_period_days_preexisting <= 730
+    ):
         score += 5
 
     return {
@@ -244,6 +273,7 @@ def _compute_transparency_score(
 
 
 # ── Premium lookup (deterministic) ────────────────────────────────────────────
+
 
 def _lookup_premium(
     rate_table: dict[str, Any] | None,
@@ -292,11 +322,15 @@ def _lookup_premium(
         "annual_premium_inr": int(premium),
         "source": _DB_SOURCE,
         "last_verified": _LAST_VERIFIED,
-        "note": "Plausible seed figure — must be verified against real insurer rate cards before showing to users.",
+        "note": (
+            "Plausible seed figure — must be verified against real insurer rate cards "
+            "before showing to users."
+        ),
     }
 
 
 # ── Eligibility helper ────────────────────────────────────────────────────────
+
 
 def _check_eligibility(terms: PolicyTerms, user_profile: dict[str, Any]) -> bool:
     """True if the user's age falls within the policy's entry window."""
@@ -305,12 +339,11 @@ def _check_eligibility(terms: PolicyTerms, user_profile: dict[str, Any]) -> bool
         return True  # cannot determine — assume eligible until profile complete
     if terms.entry_age_min and user_age < terms.entry_age_min:
         return False
-    if terms.entry_age_max and user_age > terms.entry_age_max:
-        return False
-    return True
+    return not (terms.entry_age_max and user_age > terms.entry_age_max)
 
 
 # ── Node entry point ──────────────────────────────────────────────────────────
+
 
 async def compare_verify_node(state: SessionState) -> dict[str, Any]:
     """Execute the compare_verify node — Stage 3 fan-in.
@@ -348,11 +381,10 @@ async def compare_verify_node(state: SessionState) -> dict[str, Any]:
     all_transparency_scores: dict[str, dict[str, Any]] = {}
 
     async with AsyncSessionLocal() as db_session:
-        db_session: AsyncSession
         stmt = (
             select(PolicyTerms, PolicyDocument)
             .join(PolicyDocument, PolicyTerms.policy_document_id == PolicyDocument.id)
-            .where(PolicyTerms.expiry_date.is_(None))   # active terms only
+            .where(PolicyTerms.expiry_date.is_(None))  # active terms only
             .order_by(PolicyDocument.insurer)
         )
         result = await db_session.execute(stmt)
@@ -456,7 +488,7 @@ async def compare_verify_node(state: SessionState) -> dict[str, Any]:
     # ── Compose draft_output ──────────────────────────────────────────────────
     draft_output: dict[str, Any] = {
         "stage": "compare_verify",
-        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "generated_at": datetime.now(UTC).isoformat(),
         "user_profile_snapshot": {
             "age": user_profile.get("age"),
             "city_tier": user_profile.get("city_tier"),
@@ -466,7 +498,7 @@ async def compare_verify_node(state: SessionState) -> dict[str, Any]:
         "risk_adjusted_target_si_inr": {
             "value": target_si,
             "source": "app.calculators.risk_profile (deterministic)",
-            "last_verified": datetime.now(timezone.utc).date().isoformat(),
+            "last_verified": datetime.now(UTC).date().isoformat(),
         },
         # Need-fit view — not a ranking.
         # explanation_report (Stage 5) will use this to produce prose for the user.
@@ -496,11 +528,6 @@ async def compare_verify_node(state: SessionState) -> dict[str, Any]:
 
     return {
         "draft_output": draft_output,
-        "hidden_clauses": [
-            {"policy_key": k, "clauses": v}
-            for k, v in all_hidden_clauses.items()
-        ],
-        "transparency_scores": {
-            k: v["score"] for k, v in all_transparency_scores.items()
-        },
+        "hidden_clauses": [{"policy_key": k, "clauses": v} for k, v in all_hidden_clauses.items()],
+        "transparency_scores": {k: v["score"] for k, v in all_transparency_scores.items()},
     }

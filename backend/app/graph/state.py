@@ -7,7 +7,7 @@ never by asking an LLM what should happen next (AGENTS.md rule 2).
 
 Fields:
     session_id          — unique session identifier
-    messages            — conversation history turns [{"role": "user"|"assistant", "content": "..."}]
+    messages            — conversation history turns with role and content
     user_profile        — age, dependents, income, city_tier, health_flags, etc.
     consent             — what the user has agreed to, timestamped
     intent              — "life" | "health" | "unclear" | None
@@ -36,6 +36,7 @@ class SessionState(TypedDict, total=False):
     """Shared state dictionary passed across all nodes in the LangGraph."""
 
     session_id: str
+    user_id: str | None
     messages: list[dict[str, Any]]
     user_profile: dict[str, Any]
     consent: dict[str, Any]
@@ -47,6 +48,8 @@ class SessionState(TypedDict, total=False):
     transparency_scores: dict[str, Any]
     draft_output: dict[str, Any]
     guardrail_notes: list[str]
+    confidence_score: float | None
+    confidence_inputs: dict[str, Any]
     approved: bool
     escalation: bool
     escalation_reason: str | None
@@ -61,6 +64,8 @@ def create_initial_state(
     user_message: str | None = None,
     consent: dict[str, Any] | None = None,
     target_language: str = "en",
+    user_id: str | None = None,
+    user_profile: dict[str, Any] | None = None,
 ) -> SessionState:
     """Instantiate a clean initial state with documented defaults."""
     messages: list[dict[str, Any]] = []
@@ -69,9 +74,10 @@ def create_initial_state(
 
     return SessionState(
         session_id=session_id,
+        user_id=user_id,
         messages=messages,
-        user_profile={},
-        consent=consent or {"granted": True, "scopes": ["advisory"]},
+        user_profile=dict(user_profile or {}),
+        consent=consent or {"granted": False, "scopes": []},
         intent=None,
         missing_fields=["age", "city_tier", "dependents", "pre_existing_conditions"],
         calculator_outputs={},
@@ -80,6 +86,8 @@ def create_initial_state(
         transparency_scores={},
         draft_output={},
         guardrail_notes=[],
+        confidence_score=None,
+        confidence_inputs={},
         approved=False,
         escalation=False,
         escalation_reason=None,

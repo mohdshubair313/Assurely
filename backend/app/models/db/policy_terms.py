@@ -24,8 +24,8 @@ from datetime import date
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import String, Integer, Date, Numeric, ForeignKey, text
-from sqlalchemy.dialects.postgresql import UUID, JSONB
+from sqlalchemy import Date, ForeignKey, Integer, Numeric, String, text
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.db import Base

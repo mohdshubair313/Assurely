@@ -20,10 +20,12 @@ Tests:
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from langchain_core.runnables import RunnableConfig
 
 from app.graph.build_graph import build_graph
 from app.graph.nodes.guardrail import (
@@ -37,10 +39,10 @@ from app.graph.nodes.guardrail import (
     evaluate_escalation,
     guardrail_node,
 )
-from app.graph.state import SessionState, create_initial_state
-
+from app.graph.state import create_initial_state
 
 # ── Helpers & Fixtures ────────────────────────────────────────────────────────
+
 
 def _make_clean_draft_output() -> dict[str, Any]:
     """Generate a valid, fully-sourced draft_output matching Stage 3 output format."""
@@ -124,7 +126,7 @@ def _make_clean_hidden_clauses() -> list[dict[str, Any]]:
 def _make_empty_db_session() -> MagicMock:
     """Mock DB session preventing asyncpg calls during integration tests."""
     mock_result = MagicMock()
-    mock_result.all.return_value = cast(list[Any], [])
+    mock_result.all.return_value = []
     mock_session = AsyncMock()
     mock_session.execute = AsyncMock(return_value=mock_result)
     mock_session.__aenter__ = AsyncMock(return_value=mock_session)
@@ -133,6 +135,7 @@ def _make_empty_db_session() -> MagicMock:
 
 
 # ── Test Classes ─────────────────────────────────────────────────────────────
+
 
 class TestRankingLanguageCheck:
     """AGENTS.md rule 1: Never use 'rank', 'ranking', 'best', or 'top'."""
@@ -145,7 +148,9 @@ class TestRankingLanguageCheck:
 
     def test_passes_clean_need_fit_language(self) -> None:
         assert check_ranking_language("Need-fit evaluation for your family size.") == []
-        assert check_ranking_language("Features 36-month waiting period with full restoration.") == []
+        assert (
+            check_ranking_language("Features 36-month waiting period with full restoration.") == []
+        )
         assert check_ranking_language("Coverage option aligned with stated requirements.") == []
 
     def test_word_boundaries_prevent_false_positives(self) -> None:
@@ -240,11 +245,13 @@ class TestConfidenceScoreCalculation:
     def test_low_confidence_on_missing_fields_and_conflicting_sources(self) -> None:
         """Specifically designed test case producing low confidence score."""
         draft = {
-            "need_fit_view": [{
-                "product_name": "PolicyA",
-                "sum_insured_range_inr": {"min": 500000, "max": 10000000},
-                # Missing entry_age_window, waiting_period, premium_estimate
-            }],
+            "need_fit_view": [
+                {
+                    "product_name": "PolicyA",
+                    "sum_insured_range_inr": {"min": 500000, "max": 10000000},
+                    # Missing entry_age_window, waiting_period, premium_estimate
+                }
+            ],
             "cited_facts": [{"claim": "test", "source": "test", "conflict": True}],
         }
         incomplete_profile = {"age": 30}  # missing city_tier, dependents, PED
@@ -441,15 +448,54 @@ class TestGuardrailGraphIntegration:
 
     @pytest.mark.asyncio
     async def test_graph_executes_with_policies_passes_guardrail_without_escalation(self) -> None:
-        """With active policies and a young healthy profile, graph passes guardrail without escalation."""
-        with patch("app.graph.nodes.compare_verify.AsyncSessionLocal", side_effect=_make_terms_db_session):
+        """Active policies and a young healthy profile pass guardrail without escalation."""
+        with (
+            patch(
+                "app.graph.nodes.needs_intake.llm_call",
+                new=AsyncMock(
+                    return_value=SimpleNamespace(
+                        content='{"age":28,"city_tier":"tier_1","dependents":0,'
+                        '"pre_existing_conditions":false}'
+                    )
+                ),
+            ),
+            patch(
+                "app.graph.nodes.intent_router.llm_call",
+                new=AsyncMock(
+                    return_value=SimpleNamespace(content='{"intent":"health"}')
+                ),
+            ),
+            patch(
+                "app.graph.nodes.compare_verify.AsyncSessionLocal",
+                side_effect=_make_terms_db_session,
+            ),
+            patch(
+                "app.graph.nodes.explanation_report.llm_call",
+                new=AsyncMock(
+                    return_value=SimpleNamespace(
+                        content=(
+                            '{"sentences":[{"text":"Sourced policy details are available.",'
+                            '"evidence_ids":["E1"]}]}'
+                        )
+                    )
+                ),
+            ),
+            # This suite verifies Stage 4 behavior; Postgres persistence is
+            # covered independently and live against the Compose database.
+            patch(
+                "app.graph.build_graph.persist_memory_node",
+                new=AsyncMock(return_value={"decision_trace_persisted": True}),
+            ),
+        ):
             graph = build_graph()
             state = create_initial_state(
                 session_id="test_integration_stage4_001",
-                user_message="I am 28, live in Mumbai, no dependents, healthy, no pre-existing conditions",
+                user_message=(
+                    "I am 28, live in Mumbai, no dependents, healthy, no pre-existing conditions"
+                ),
             )
 
-            config = {"configurable": {"thread_id": "test_integration_stage4_001"}}
+            config: RunnableConfig = {"configurable": {"thread_id": "test_integration_stage4_001"}}
             final_state = await graph.ainvoke(state, config=config)
 
             # Assert Stage 4 guardrail executed and populated SessionState keys
@@ -464,23 +510,65 @@ class TestGuardrailGraphIntegration:
             assert final_state["escalation"] is False
             assert final_state["escalation_reason"] is None
 
-            # AGENTS.md rule 4: output has NOT been written yet (Stage 5 explanation_report pending)
-            assert final_state.get("output") == {}
+            # Stage 5 runs before the delivery gate and writes the sourced report.
+            assert final_state["output"]["report_status"] in {
+                "ready",
+                "insufficient_verified_evidence",
+            }
 
     @pytest.mark.asyncio
     async def test_graph_executes_empty_db_triggers_low_confidence_escalation(self) -> None:
-        """When policy terms DB yields zero policies, guardrail triggers low-confidence advisor escalation."""
-        with patch("app.graph.nodes.compare_verify.AsyncSessionLocal", side_effect=_make_empty_db_session):
+        """Zero policies from the terms DB trigger low-confidence advisor escalation."""
+        with (
+            patch(
+                "app.graph.nodes.needs_intake.llm_call",
+                new=AsyncMock(
+                    return_value=SimpleNamespace(
+                        content='{"age":28,"city_tier":"tier_1","dependents":0,'
+                        '"pre_existing_conditions":false}'
+                    )
+                ),
+            ),
+            patch(
+                "app.graph.nodes.intent_router.llm_call",
+                new=AsyncMock(
+                    return_value=SimpleNamespace(content='{"intent":"health"}')
+                ),
+            ),
+            patch(
+                "app.graph.nodes.compare_verify.AsyncSessionLocal",
+                side_effect=_make_empty_db_session,
+            ),
+            patch(
+                "app.graph.nodes.explanation_report.llm_call",
+                new=AsyncMock(
+                    return_value=SimpleNamespace(
+                        content=(
+                            '{"sentences":[{"text":"Sourced policy details are available.",'
+                            '"evidence_ids":["E1"]}]}'
+                        )
+                    )
+                ),
+            ),
+            patch(
+                "app.graph.build_graph.persist_memory_node",
+                new=AsyncMock(return_value={"decision_trace_persisted": True}),
+            ),
+        ):
             graph = build_graph()
             state = create_initial_state(
                 session_id="test_integration_stage4_002",
-                user_message="I am 28, live in Mumbai, no dependents, healthy, no pre-existing conditions",
+                user_message=(
+                    "I am 28, live in Mumbai, no dependents, healthy, no pre-existing conditions"
+                ),
             )
 
-            config = {"configurable": {"thread_id": "test_integration_stage4_002"}}
+            config: RunnableConfig = {"configurable": {"thread_id": "test_integration_stage4_002"}}
             final_state = await graph.ainvoke(state, config=config)
 
             assert final_state["approved"] is True
             assert final_state["escalation"] is True
             assert "Low confidence" in cast(str, final_state.get("escalation_reason"))
-            assert final_state.get("output") == {}
+            # Escalation gates delivery; it does not skip report generation.
+            assert "output" in final_state
+            assert final_state["delivery_hold"] is True
