@@ -22,6 +22,12 @@ heuristics. Both policy data and calculator assumptions need source verification
 and qualified review before real users see derived recommendations. A calculation
 timestamp is not evidence of source verification. See deviation #5 in PROGRESS.md.
 
+> **⚠️ Synthetic data:** The seed file [`backend/app/db/seed.py`](backend/app/db/seed.py)
+> contains entirely synthetic policy data (premium rates, exclusion lists, sum
+> insured ranges). These are **not sourced from insurer documents**. See the
+> file header for the full warning. Do not push real policy PDFs to this public
+> repository.
+
 Confidence is a completeness/compliance heuristic, not a calibrated probability.
 Explicit conflict flags are retained through Stage 3; this does not establish
 automatic contradiction detection or verified retrieval agreement.

@@ -3,6 +3,22 @@
 Can be run standalone via:
   python -m app.db.seed
 
+⚠️  SYNTHETIC DATA — NOT VERIFIED AGAINST SOURCE DOCUMENTS  ⚠️
+
+All policy data below (HDFC ERGO Optima Secure, Care Supreme, Star Health
+Comprehensive) contains plausible but UNVERIFIED benchmarks for development
+and testing only. Premium rates, sum insured limits, entry age windows,
+waiting periods, and exclusion lists are approximations — they are NOT
+sourced from current insurer policy wordings or IRDAI-filed documents.
+
+DO NOT present these values to real users or treat them as accurate
+insurance product data. Before any real-user deployment:
+  1. Replace all seed data with values verified against current policy wordings.
+  2. Have a qualified actuary or underwriter sign off on every numeric value.
+  3. Attach source document references and verification dates per AGENTS.md rule 6.
+
+See PROGRESS.md deviation #5 for the full compliance requirement.
+
 Populates:
   - 3 Real Indian Health Insurance policy documents (HDFC ERGO, Care, Star Health)
   - policy_terms with deterministic limits, waiting periods, exclusions, and rate tables
