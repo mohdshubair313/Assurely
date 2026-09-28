@@ -29,6 +29,12 @@ class Settings(BaseSettings):
     )
     log_level: str = Field(default="info", description="Logging level")
 
+    # Mandatory restricted diagnostics. Linux file permissions are verified at startup.
+    exception_log_dir: str = "/var/log/insuranceai/private"
+    exception_log_retention_hours: int = Field(default=168, ge=1, le=720)
+    exception_log_max_records: int = Field(default=1000, ge=1, le=100000)
+    exception_log_cleanup_seconds: int = Field(default=60, ge=1, le=3600)
+
     # Trusted identity provider. All three must be configured before any
     # profile-memory or consent action can use a bearer token.
     auth_issuer: str = ""

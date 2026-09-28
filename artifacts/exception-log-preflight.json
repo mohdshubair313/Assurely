@@ -1,0 +1,61 @@
+﻿{
+    "verified_at":  "2026-09-28T11:32:57Z",
+    "request_status":  200,
+    "delivery_hold":  true,
+    "fault_injection":  "temporary loopback API process; report-provider call only",
+    "restricted_record":  {
+                              "error_ref":  "12b594f1f43548499e77231c65ee584a",
+                              "timestamp":  "2026-09-28T11:32:56.519846+00:00",
+                              "node":  "explanation-report",
+                              "session_id":  "94aefb95-2625-474d-a827-b0f7e0c66147",
+                              "trace_id":  "99afbecb8993423fa0d59fc8eb3262f6",
+                              "decision_trace_id":  "3bd7ade4-2362-4b8e-bbae-4b8322fbb7cd",
+                              "exception_class":  "RuntimeError",
+                              "message":  "[exception message redacted]",
+                              "traceback":  [
+                                                {
+                                                    "file":  "explanation_report.py",
+                                                    "function":  "explanation_report_node",
+                                                    "line":  157
+                                                },
+                                                {
+                                                    "file":  "exception_log_preflight.py",
+                                                    "function":  "deliberate_failure",
+                                                    "line":  36
+                                                }
+                                            ],
+                              "causes":  [
+
+                                         ]
+                          },
+    "general_error_line":  "ERROR error_ref=12b594f1f43548499e77231c65ee584a",
+    "fake_values_absent_from_both_logs":  true,
+    "decision_trace":  {
+                           "id":  "3bd7ade4-2362-4b8e-bbae-4b8322fbb7cd",
+                           "session_id":  "94aefb95-2625-474d-a827-b0f7e0c66147",
+                           "correlation":  {
+                                               "trace_id":  "99afbecb8993423fa0d59fc8eb3262f6",
+                                               "session_id":  "94aefb95-2625-474d-a827-b0f7e0c66147",
+                                               "decision_trace_id":  "3bd7ade4-2362-4b8e-bbae-4b8322fbb7cd"
+                                           },
+                           "synthetic_profile_values_present":  true,
+                           "clauses_count":  5
+                       },
+    "langfuse":  {
+                     "trace_id":  "99afbecb8993423fa0d59fc8eb3262f6",
+                     "observation_count":  12,
+                     "error_node":  "explanation-report",
+                     "error_level":  "ERROR",
+                     "error_ref":  "12b594f1f43548499e77231c65ee584a",
+                     "decision_trace_id":  "3bd7ade4-2362-4b8e-bbae-4b8322fbb7cd",
+                     "fake_values_absent":  true,
+                     "sdk_version":  "4.15.6"
+                 },
+    "access_checks":  {
+                          "admin_read":  "allowed",
+                          "unprivileged_reader":  "PermissionError",
+                          "unprivileged_direct_file_read":  "PermissionError",
+                          "directory_mode":  "0700",
+                          "file_mode":  "0600"
+                      }
+}

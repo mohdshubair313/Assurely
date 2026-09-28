@@ -11,12 +11,13 @@ from __future__ import annotations
 import hashlib
 import logging
 from collections.abc import Awaitable, Callable, Iterator
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from contextvars import ContextVar, Token
 from functools import lru_cache, wraps
 from typing import Any, Protocol
 
 from app.core.config import get_settings
+from app.core.correlation import correlation_scope, current_turn, node_scope
 from app.graph.state import SessionState
 
 logger = logging.getLogger(__name__)
@@ -82,6 +83,7 @@ def observation(
     metadata: dict[str, Any] | None = None,
     model: str | None = None,
     model_parameters: dict[str, Any] | None = None,
+    trace_context: dict[str, str] | None = None,
 ) -> Iterator[Observation | None]:
     """Create a nested observation when this request has an active trace."""
     if not _active_trace.get():
@@ -102,6 +104,7 @@ def observation(
         metadata=metadata,
         model=model,
         model_parameters=model_parameters,
+        trace_context=trace_context,
     ) as span:
         try:
             yield span
@@ -118,6 +121,18 @@ def observation(
 @contextmanager
 def request_trace(session_id: str, *, message_char_count: int) -> Iterator[Observation | None]:
     """Start one trace per web-chat turn and group turns by app session ID."""
+    context = current_turn.get()
+    scope = nullcontext(context) if context else correlation_scope(session_id)
+    with scope as turn:
+        assert turn is not None
+        with _request_trace(turn.identifiers(), message_char_count=message_char_count) as span:
+            yield span
+
+
+@contextmanager
+def _request_trace(
+    identifiers: dict[str, str | None], *, message_char_count: int
+) -> Iterator[Observation | None]:
     settings = get_settings()
     client = _get_client()
     model_token = _turn_llm_metadata.set({"models": [], "prompts": []})
@@ -134,7 +149,7 @@ def request_trace(session_id: str, *, message_char_count: int) -> Iterator[Obser
     try:
         with (
             propagate_attributes(
-                session_id=session_id,
+                session_id=identifiers["session_id"],
                 trace_name="insurance-advisory-turn",
                 tags=["web-chat", "phase-1"],
                 environment=settings.environment,
@@ -144,7 +159,11 @@ def request_trace(session_id: str, *, message_char_count: int) -> Iterator[Obser
                 "insurance-advisory-turn",
                 as_type="agent",
                 input={"channel": "web-chat", "message_char_count": message_char_count},
-                metadata={"route": "/v1/message", "environment": settings.environment},
+                metadata={
+                    "route": "/v1/message", "environment": settings.environment,
+                    "decision_trace_id": identifiers["decision_trace_id"],
+                },
+                trace_context={"trace_id": str(identifiers["trace_id"])},
             ) as span,
         ):
             yield span
@@ -161,13 +180,22 @@ def trace_node(
 
     @wraps(node)
     async def traced(state: SessionState) -> dict[str, Any]:
-        with observation(
+        turn = current_turn.get()
+        if turn is not None and isinstance(state.get("user_profile"), dict):
+            turn.profile_snapshot = state["user_profile"]
+        with node_scope(name), observation(
             name,
             as_type="span",
             input={"state_fields": sorted(state.keys())},
             metadata={"operation": "graph-node"},
         ) as span:
-            result = await node(state)
+            try:
+                result = await node(state)
+            except Exception:
+                logger.exception("Graph node failed")
+                raise
+            if turn is not None and isinstance(result.get("user_profile"), dict):
+                turn.profile_snapshot = result["user_profile"]
             if span is not None:
                 safe_result: dict[str, Any] = {"result_fields": sorted(result.keys())}
                 for field in ("intent", "approved", "escalation", "delivery_hold"):
@@ -187,6 +215,14 @@ def trace_node(
                     if isinstance(sentences, list):
                         safe_result["report_sentence_count"] = len(sentences)
                 span.update(output=safe_result)
+                turn = current_turn.get()
+                error_refs = [ref for _, ref, node_name in turn.errors if node_name == name] \
+                    if turn else []
+                if error_refs:
+                    span.update(
+                        level="ERROR", status_message="Exception content redacted",
+                        metadata={"error_refs": error_refs},
+                    )
             return result
 
     return traced

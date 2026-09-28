@@ -20,7 +20,9 @@ settings = get_settings()
 
 async_engine = create_async_engine(
     settings.database_url,
-    echo=(settings.log_level.lower() == "debug"),
+    # SQL values may contain profile data; LOG_LEVEL must never enable their export.
+    echo=False,
+    hide_parameters=True,
     pool_pre_ping=True,
     pool_size=10,
     max_overflow=20,
