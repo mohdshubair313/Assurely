@@ -17,6 +17,7 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
 
+from app.core.correlation import SESSION_NAMESPACE, current_turn, database_session_id
 from app.core.tracing import current_llm_metadata
 from app.db.session import AsyncSessionLocal
 from app.graph.state import SessionState
@@ -28,15 +29,12 @@ from app.models.db.user import User
 from app.models.db.user_profile_memory import UserProfileMemory
 
 logger = logging.getLogger(__name__)
-_SESSION_NAMESPACE = uuid.UUID("3c8b8c8f-a4c5-4b19-9ec8-413f5a11c92e")
+_SESSION_NAMESPACE = SESSION_NAMESPACE
 
 
 def _database_session_id(value: str) -> uuid.UUID:
     """Preserve UUID session IDs; map arbitrary API IDs stably for the FK."""
-    try:
-        return uuid.UUID(value)
-    except (ValueError, TypeError, AttributeError):
-        return uuid.uuid5(_SESSION_NAMESPACE, value)
+    return database_session_id(value)
 
 
 def _json_safe(value: Any) -> Any:
@@ -137,7 +135,9 @@ async def persist_memory_node(state: SessionState) -> dict[str, Any]:
         confidence_inputs = _json_safe(state.get("confidence_inputs", {}))
         if not confidence_inputs and state.get("confidence_score") is None:
             confidence_inputs = {"status": "guardrail_not_reached"}
+        turn = current_turn.get()
         trace = DecisionTrace(
+            id=uuid.UUID(turn.decision_trace_id) if turn else uuid.uuid4(),
             session_id=session_id,
             user_profile_snapshot_json=profile,
             policy_versions_evaluated_json=policy_versions,
@@ -151,6 +151,7 @@ async def persist_memory_node(state: SessionState) -> dict[str, Any]:
                     "escalation_reason": state.get("escalation_reason"),
                     "guardrail_notes": state.get("guardrail_notes", []),
                     "report_status": state.get("output", {}).get("report_status"),
+                    "correlation": turn.identifiers() if turn else {},
                 }
             ),
             sources_per_claim_json=_json_safe(_sources_per_claim(state)),

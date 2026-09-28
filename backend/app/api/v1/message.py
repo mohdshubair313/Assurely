@@ -17,6 +17,7 @@ from langchain_core.runnables import RunnableConfig
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
+from app.core.correlation import current_turn, database_session_id
 from app.core.security import optional_authenticated_user_id, require_matching_user_id
 from app.core.tracing import request_trace
 from app.db.session import AsyncSessionLocal
@@ -149,6 +150,9 @@ async def send_message(
     ],
 ) -> MessageResponse:
     """Run a user turn through the LangGraph insurance advisor pipeline."""
+    turn = current_turn.get()
+    if turn is not None:
+        turn.session_id = str(database_session_id(req.session_id))
     try:
         if req.user_id is not None:
             if authenticated_user_id is None:
@@ -186,7 +190,18 @@ async def send_message(
             ):
                 prior_user_id = current_checkpoint.values.get("user_id")
                 requested_user_id = str(user_id) if user_id else None
-                if prior_user_id != requested_user_id:
+                if prior_user_id is not None:
+                    if requested_user_id is None:
+                        raise HTTPException(
+                            status_code=401,
+                            detail="An authenticated session cannot be continued anonymously.",
+                        )
+                    if prior_user_id != requested_user_id:
+                        raise HTTPException(
+                            status_code=403,
+                            detail="You do not have permission to continue this session.",
+                        )
+                elif requested_user_id is not None:
                     raise HTTPException(
                         status_code=409,
                         detail="The user_id for an existing session cannot be changed.",
@@ -213,8 +228,15 @@ async def send_message(
                         target_language=req.target_language,
                     )
                 )
+            if turn is not None:
+                turn.profile_snapshot = input_state.get("user_profile")
 
             final_state = await _app_graph.ainvoke(input_state, config=config)
+            # Attach profile to turn context for PII scrubbing in exception logs.
+            if turn is not None:
+                turn.profile_snapshot = (
+                    final_state.get("user_profile") or input_state.get("user_profile")
+                )
             response = build_message_response(req.session_id, final_state)
             if trace is not None:
                 trace.update(

@@ -58,11 +58,19 @@ def test_consent_endpoint() -> None:
 
 def test_session_endpoint() -> None:
     """Verify GET /v1/session/{id} returns session state."""
-    response = client.get("/v1/session/sess-abc-123")
-    assert response.status_code == 200
-    data = response.json()
-    assert data["session_id"] == "sess-abc-123"
-    assert data["status"] == "active"
+    from types import SimpleNamespace
+
+    from app.api.v1 import message as message_api
+
+    checkpoint = SimpleNamespace(
+        values={"messages": [{"role": "user", "content": "hi"}]}
+    )
+    with patch.object(message_api._app_graph, "aget_state", AsyncMock(return_value=checkpoint)):
+        response = client.get("/v1/session/sess-abc-123")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["session_id"] == "sess-abc-123"
+        assert data["status"] == "active"
 
 
 def test_post_message_endpoint() -> None:
