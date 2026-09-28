@@ -150,9 +150,11 @@ class PolicyVectorStore:
             self._collection = None
 
     def _seed_default_clauses(self) -> None:
-        """Seed the ChromaDB collection with initial policy clauses."""
+        """Seed the ChromaDB collection with initial policy clauses after screening."""
         if not self._collection:
             return
+        from app.rag.ingestion_screening import screen_document
+
         ids = [doc["id"] for doc in DEFAULT_SEEDED_CLAUSES]
         documents = [doc["content"] for doc in DEFAULT_SEEDED_CLAUSES]
         metadatas = [
@@ -167,7 +169,94 @@ class PolicyVectorStore:
             }
             for doc in DEFAULT_SEEDED_CLAUSES
         ]
-        self._collection.add(ids=ids, documents=documents, metadatas=metadatas)
+        screening_results = [
+            screen_document(content=doc["content"], source_url=doc["url"])
+            for doc in DEFAULT_SEEDED_CLAUSES
+        ]
+        self.add(
+            documents=documents,
+            metadatas=metadatas,
+            ids=ids,
+            screening_results=screening_results,
+        )
+
+    def add(
+        self,
+        documents: list[str],
+        metadatas: list[dict[str, Any]],
+        ids: list[str],
+        screening_results: list[Any],
+    ) -> None:
+        """Add screened documents to the vector store.
+
+        ENFORCEMENT (AGENTS.md rule 3, single gate requirement):
+        Every document must be accompanied by an ADMIT ScreeningResult.
+        Any missing screening result, quarantined result, or hash mismatch
+        fails closed immediately with PermissionError or ValueError.
+        """
+        if not documents:
+            return
+
+        if len(documents) != len(screening_results):
+            raise ValueError(
+                f"Mismatch: received {len(documents)} documents but "
+                f"{len(screening_results)} screening results."
+            )
+        if len(documents) != len(ids) or len(documents) != len(metadatas):
+            raise ValueError("documents, metadatas, and ids must have the same length.")
+
+        from app.rag.ingestion_screening import ScreeningOutcome, compute_sha256
+
+        # Validate each document against its screening result
+        for doc, meta, doc_id, screen in zip(
+            documents, metadatas, ids, screening_results, strict=True
+        ):
+            if screen is None:
+                raise PermissionError(
+                    f"Unscreened document rejected: document '{doc_id}' lacks a screening result."
+                )
+            if getattr(screen, "outcome", None) != ScreeningOutcome.ADMIT:
+                reasons = getattr(screen, "reasons", ["Document not admitted"])
+                raise PermissionError(
+                    f"Quarantined document rejected: document '{doc_id}' failed screening "
+                    f"with reasons: {reasons}"
+                )
+            actual_hash = compute_sha256(doc)
+            if getattr(screen, "version_hash", None) != actual_hash:
+                raise ValueError(
+                    f"Integrity check failed: document '{doc_id}' hash mismatch "
+                    f"(expected {getattr(screen, 'version_hash', None)}, got {actual_hash})."
+                )
+
+            # Ensure metadata carries provenance per rule 6
+            meta["version_hash"] = screen.version_hash
+            meta["retrieved_at"] = screen.timestamp
+            if "url" not in meta or not meta["url"]:
+                meta["url"] = screen.source_url
+
+        # Store in Chroma if available
+        if self._collection is not None:
+            self._collection.add(ids=ids, documents=documents, metadatas=metadatas)
+
+        # Store in fallback docs for local in-memory search
+        for doc, meta, doc_id in zip(documents, metadatas, ids, strict=True):
+            # Avoid duplicate ids in fallback docs
+            self._fallback_docs = [d for d in self._fallback_docs if d.get("id") != doc_id]
+            self._fallback_docs.append(
+                {
+                    "id": doc_id,
+                    "content": doc,
+                    "insurer": meta.get("insurer", ""),
+                    "product_name": meta.get("product_name", ""),
+                    "uin": meta.get("uin", ""),
+                    "section": meta.get("section", ""),
+                    "source": meta.get("source", ""),
+                    "url": meta.get("url", ""),
+                    "last_verified": meta.get("last_verified", ""),
+                    "version_hash": meta.get("version_hash", ""),
+                    "retrieved_at": meta.get("retrieved_at", ""),
+                }
+            )
 
     def similarity_search(self, query: str, top_k: int = 3) -> list[dict[str, Any]]:
         """Search policy clauses relevant to the user's query or profile."""

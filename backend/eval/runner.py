@@ -96,6 +96,45 @@ def run_eval_case(case: dict[str, Any]) -> dict[str, Any]:
             passed = False
             reasons.append("Injection detection expectation missing")
 
+        screening_variants = case.get("screening_variants", [])
+        if screening_variants:
+            from app.rag.ingestion_screening import screen_document
+
+            false_positives = 0
+            false_negatives = 0
+            for variant in screening_variants:
+                v_id = variant.get("variant_id")
+                content = variant.get("content", "")
+                source_url = variant.get("source_url", "")
+                expected_outcome = variant.get("expected_outcome")
+                expected_substr = variant.get("expected_reason_substr")
+
+                res = screen_document(content=content, source_url=source_url)
+                actual_outcome = res.outcome.value
+
+                if expected_outcome == "admit" and actual_outcome != "admit":
+                    false_positives += 1
+                    passed = False
+                    reasons.append(
+                        f"False positive on clean variant '{v_id}': quarantined with {res.reasons}"
+                    )
+                elif expected_outcome == "quarantine" and actual_outcome != "quarantine":
+                    false_negatives += 1
+                    passed = False
+                    reasons.append(f"False negative on poisoned variant '{v_id}': was admitted")
+                elif expected_substr and not any(expected_substr in r for r in res.reasons):
+                    passed = False
+                    reasons.append(
+                        f"Variant '{v_id}' expected reason containing '{expected_substr}', "
+                        f"got {res.reasons}"
+                    )
+
+            if false_positives > 0 or false_negatives > 0:
+                reasons.append(
+                    f"Screening error metrics: False Positives={false_positives}, "
+                    f"False Negatives={false_negatives}"
+                )
+
     elif category == "ambiguous_questions":
         if expected.get("intent") != "unclear":
             passed = False

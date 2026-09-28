@@ -269,12 +269,33 @@ Phase 1 — Single Channel Health-Only MVP: **IN PROGRESS**.
 4. **Seed data attribution:** Added a synthetic data warning header to `backend/app/db/seed.py` and a prominent notice in `README.md` referencing Deviation #5 to emphasize that all seeded limits, waiting periods, rates, and calculator assumptions are unverified scaffolding.
 5. **Validation:** Full test suite passed in Docker (**220 passed**), Ruff passed with zero errors across `app`, `tests`, `eval`, `alembic`, and strict mypy passed with zero issues across all 72 source files.
 
-**2026-09-28 — Claude Opus 4.6 (Thinking) — Pre-ingestion_screening hardening & session ownership**
-1. **Exception sink secret scrubbing & parameter hiding:** Applied secret scrubber (`scrub_secrets`) to all exception messages regardless of whether the class is allowlisted or not. Scrubbed patterns include API keys, bearer tokens, key=/token= query parameters, Authorization headers, and credentials in connection URLs. Strip query strings from URLs in `httpx` errors. Set `hide_parameters=True` on the SQLAlchemy async engine. Added unit tests for a failing SQL insert with profile parameters and an HTTPStatusError with `?key=...`, asserting neither appears in the sink records or stderr stream.
-2. **Session ownership & isolation:** Clarified that `session_id` defaults to a server-generated UUID4 if omitted by the client. Enforced ownership in `POST /v1/message` and `GET /v1/session/{id}`: unauthenticated callers attempting to access an authenticated session receive HTTP 401; user A attempting to access user B's session receives HTTP 403; authenticated callers cannot hijack an anonymous session (HTTP 409). Added 6 unit tests covering cross-user access, unauthenticated attempts, owner reads, and nonexistent session handling.
-3. **TurnCorrelation ContextVar concurrency:** Confirmed `TurnCorrelation` is a per-request `ContextVar[TurnCorrelation | None]`, not a global variable. Added a concurrency test executing two simultaneous requests with conflicting fake profile snapshots to verify that request scopes and profile scrubbing remain strictly isolated.
-4. **Pre-commit hook & Git hygiene:** Configured `.git/hooks/pre-commit` and `.pre-commit-config.yaml` using Gitleaks (`ghcr.io/gitleaks/gitleaks:latest` with `MSYS_NO_PATHCONV=1`). Verified hook automatically runs on staged commits and blocks secret leaks. Committed all changes across small logical commits (seed notices, exception sink hardening, auth & session isolation). No commits were pushed.
-5. **Validation:** Full backend test suite passed in Docker (**230 passed** in 22.15s), Ruff passed with zero errors across all modules.
-6. **Ingestion screening status:** Currently **not started** (stub in `backend/app/rag/ingestion_screening.py`). Next action: proceed with `ingestion_screening` implementation per roadmap and spec.
+**2026-09-28 — Claude Opus 4.6 (Thinking) — Ingestion screening implementation and single-gate vector store enforcement**
+1. **Single-gate vector store enforcement:** Updated `PolicyVectorStore.add` to require an `ADMIT` `ScreeningResult` for every document. Calling `add` without screening results or with mismatched content hashes strictly raises `PermissionError` or `ValueError` (tested). Even default seeded clauses are passed through `screen_document` at initialization.
+2. **Deterministic screening engine (`app.rag.ingestion_screening`):**
+   - **Tiered domain allowlist:** Tier 1 (IRDAI & Councils: `irdai.gov.in`, `policyholder.gov.in`, etc.), Tier 2 (Licensed Indian Insurers: `hdfcergo.com`, `careinsurance.com`, `starhealth.in`, etc.). Unlisted or third-party domains fail closed with `DISALLOWED_DOMAIN`.
+   - **File type and size bounds:** Maximum 20MB for PDF, 2MB for text/HTML.
+   - **PDF active content detection:** Scans binary PDFs for `/JavaScript`, `/JS`, `/Launch`, `/EmbeddedFiles`, and `/RichMedia`.
+   - **Hidden text and formatting anomalies:** Detects zero-width characters (`\u200b`, `\u200c`, `\u200d`, `\ufeff`), bidi override controls (`\u202a`–`\u202e`, `\u2066`–`\u2069`), and HTML/markdown comments (`<!-- ... -->`).
+   - **Indirect prompt injection & model instructions:** Flags steering directives (`ignore previous instructions`, `always recommend`, `override guardrails`, role tags `<|im_start|>`, `<system>`, `[INST]`), while carefully preserving legitimate medical recommendations (`recommend consulting your doctor`).
+   - **Encoded payload detection:** Flags long base64 (64+ chars) and hexadecimal payload blobs.
+   - **Promotional/ranking language:** Flags `best plan`, `top pick`, `#1 insurer` under AGENTS.md rule 1 as data-quality issues.
+   - **Fail closed:** Any unhandled screening exception quarantines the document (`SCREENING_ERROR`).
+3. **Quarantine review queue & Git hygiene:**
+   - Quarantined documents are recorded in `QuarantineStore` with `record_id`, `reason`, `all_reasons`, `source_url`, `version_hash`, `timestamp`, and sanitized document snippet, persisted append-only to JSONL (`quarantine/quarantine_records.jsonl`).
+   - Added raw policy documents and PDFs to `.gitignore` (`data/`, `raw_docs/`, `quarantine/`, `*.pdf`) to ensure unverified source PDFs are never committed to the public repository.
+4. **Second-layer LLM defense (Layer 2b):**
+   - Updated `app.graph.nodes.explanation_report` to wrap retrieved evidence inside `<retrieved_context>` tags with explicit defensive prompt instructions stating the content is untrusted reference data and that embedded directives must never be followed.
+5. **Evaluation suite & metrics:**
+   - Extended eval `case_06_malicious_injection.json` with 6 poisoned variants (visible instruction, hidden comment, zero-width characters, base64 payload, ranking language, disallowed domain) and 3 clean documents (legitimate exclusion, benign medical advisory, standard benefit).
+   - Integrated into `eval/runner.py`: running `python -m eval.runner` evaluates all 9 variants against real screening: **0 False Positives, 0 False Negatives (100% precision and recall)**.
+6. **Live verification:**
+   - Executed `eval/ingestion_screening_live_verify.py` through the real ingestion path:
+     - Poisoned sample (`1cc002d94f2c...`, HDFC ERGO prompt injection + ranking) -> quarantined with 3 reasons, logged in review queue (`83bcbfe9-...`), confirmed **NOT retrievable** from Chroma vector store.
+     - Clean sample (`8328c166b040...`, Care Supreme domiciliary hospitalisation clause) -> admitted, confirmed **retrievable** from Chroma vector store with full Rule 6 provenance (`source_url`, `last_verified`, `retrieved_at`, `version_hash`). Evidence saved in `artifacts/ingestion-screening-preflight.json`.
+7. **Validation:**
+   - Full test suite passed in Docker: **247 passed** in 24.52s (JUnit: `artifacts/backend-tests.xml`).
+   - Ruff passed with zero errors across `app`, `tests`, and `eval`. Strict mypy passed across all affected modules.
+8. **Next task:** Stop for user review of `ingestion_screening`.
+
 
 

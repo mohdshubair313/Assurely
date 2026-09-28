@@ -70,11 +70,16 @@ def trusted_identity(monkeypatch: pytest.MonkeyPatch) -> Any:
         auth_audience=AUDIENCE,
         auth_jwks_url=JWKS_URL,
     )
-    jwks_client = SimpleNamespace(
-        get_signing_key_from_jwt=lambda token: SimpleNamespace(key=public_key)
-    )
+    def _get_signing_key(token: str) -> Any:
+        return SimpleNamespace(key=public_key)
+
+    jwks_client = SimpleNamespace(get_signing_key_from_jwt=_get_signing_key)
+
+    def _get_jwks(url: str) -> Any:
+        return jwks_client
+
     monkeypatch.setattr(security, "get_settings", lambda: settings)
-    monkeypatch.setattr(security, "_jwks_client", lambda url: jwks_client)
+    monkeypatch.setattr(security, "_jwks_client", _get_jwks)
     return private_key
 
 
@@ -95,6 +100,10 @@ def _token(private_key: Any, claims: dict[str, Any] | None = None) -> str:
 
 def _bearer(token: str) -> HTTPAuthorizationCredentials:
     return HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
+
+
+def _noop_trace(*args: Any, **kwargs: Any) -> nullcontext[None]:
+    return nullcontext(None)
 
 
 def _forbidden_db() -> None:
@@ -262,7 +271,7 @@ def test_anonymous_message_stays_available_without_profile_storage(
     )
     monkeypatch.setattr(message_api, "_app_graph", graph)
     monkeypatch.setattr(message_api, "AsyncSessionLocal", _forbidden_db)
-    monkeypatch.setattr(message_api, "request_trace", lambda *args, **kwargs: nullcontext(None))
+    monkeypatch.setattr(message_api, "request_trace", _noop_trace)
     with TestClient(app) as client:
         response = client.post("/v1/message", json={"user_message": "Help with health cover"})
     assert response.status_code == 200
@@ -396,7 +405,7 @@ def test_authenticated_message_loads_only_the_verified_subject_profile(
     )
     monkeypatch.setattr(message_api, "AsyncSessionLocal", lambda: db)
     monkeypatch.setattr(message_api, "_app_graph", graph)
-    monkeypatch.setattr(message_api, "request_trace", lambda *args, **kwargs: nullcontext(None))
+    monkeypatch.setattr(message_api, "request_trace", _noop_trace)
     with TestClient(app) as client:
         response = client.post(
             "/v1/message",
@@ -424,7 +433,8 @@ def test_user_a_cannot_continue_user_b_session(
     db = AsyncMock()
     db.__aenter__.return_value = db
     db_result = MagicMock()
-    db_result.scalars.return_value.all.return_value = []
+    empty_scopes: list[str] = []
+    db_result.scalars.return_value.all.return_value = empty_scopes
     db.execute.return_value = db_result
     # Session exists in DB and belongs to OTHER_USER_ID
     db.get.return_value = DBSession(
@@ -437,7 +447,7 @@ def test_user_a_cannot_continue_user_b_session(
 
     monkeypatch.setattr(message_api, "AsyncSessionLocal", lambda: db)
     monkeypatch.setattr(message_api, "_app_graph", graph)
-    monkeypatch.setattr(message_api, "request_trace", lambda *args, **kwargs: nullcontext(None))
+    monkeypatch.setattr(message_api, "request_trace", _noop_trace)
 
     with TestClient(app) as client:
         response = client.post(
@@ -495,7 +505,7 @@ def test_authenticated_session_cannot_be_continued_anonymously(
 
     monkeypatch.setattr(message_api, "AsyncSessionLocal", lambda: db)
     monkeypatch.setattr(message_api, "_app_graph", graph)
-    monkeypatch.setattr(message_api, "request_trace", lambda *args, **kwargs: nullcontext(None))
+    monkeypatch.setattr(message_api, "request_trace", _noop_trace)
 
     with TestClient(app) as client:
         response = client.post(

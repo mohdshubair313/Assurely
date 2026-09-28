@@ -32,6 +32,12 @@ coverage/
 .local/
 *.log
 exception-logs/
+quarantine/
 *.pid
 .DS_Store
 Thumbs.db
+
+# Raw ingestion documents and policy PDFs (never commit to public repo)
+data/
+raw_docs/
+*.pdf
