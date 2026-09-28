@@ -20,6 +20,7 @@ services:
       - CHROMA_PORT=8000
       - ENVIRONMENT=development
       - LOG_LEVEL=debug
+      - EXCEPTION_LOG_DIR=/var/log/insuranceai/private
     depends_on:
       postgres:
         condition: service_healthy
@@ -29,6 +30,7 @@ services:
         condition: service_started
     volumes:
       - ./backend/app:/app/app
+      - exception-logs:/var/log/insuranceai
     networks:
       - insurance-net
     restart: unless-stopped
@@ -87,6 +89,7 @@ volumes:
   postgres-data:
   redis-data:
   chroma-data:
+  exception-logs:
 
 networks:
   insurance-net:

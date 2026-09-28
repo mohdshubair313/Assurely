@@ -11,3 +11,7 @@ __pycache__/
 .git/
 .gitignore
 .env
+.env.*
+*.pem
+*.key
+exception-logs/

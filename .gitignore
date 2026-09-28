@@ -31,6 +31,7 @@ coverage/
 # Local runtime and capture tooling
 .local/
 *.log
+exception-logs/
 *.pid
 .DS_Store
 Thumbs.db
