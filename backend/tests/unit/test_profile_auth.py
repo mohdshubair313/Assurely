@@ -21,6 +21,7 @@ from app.api.v1 import message as message_api
 from app.core import security
 from app.core.config import Settings
 from app.main import app
+from app.models.db.user_profile_memory import UserProfileMemory
 
 USER_ID = uuid.UUID("00000000-0000-4000-8000-000000000123")
 OTHER_USER_ID = uuid.UUID("00000000-0000-4000-8000-000000000456")
@@ -403,7 +404,7 @@ def test_authenticated_message_loads_only_the_verified_subject_profile(
             headers={"Authorization": f"Bearer {_token(trusted_identity)}"},
         )
     assert response.status_code == 200
-    db.get.assert_awaited_once_with(message_api.UserProfileMemory, USER_ID)
+    db.get.assert_awaited_once_with(UserProfileMemory, USER_ID)
     state = graph.ainvoke.await_args.args[0]
     assert state["user_id"] == str(USER_ID)
     assert state["user_profile"] == {"age": 35}
