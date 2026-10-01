@@ -1,0 +1,34 @@
+{
+  "exception_privacy": {
+    "allowlisted_error_retains_known_name": true,
+    "runtime_error_retains_declared_medical_condition": true,
+    "generated_text_retained": true,
+    "general_log_excludes_fake_values": true
+  },
+  "session_delivery_hold": {
+    "status": 200,
+    "message_route_hides_citations": true,
+    "message_route_hides_calculators": true,
+    "session_route_exposes_held_citation": true,
+    "session_route_exposes_held_calculator": true
+  },
+  "binary_documents": {
+    "clean_pdf_screening_outcome": "admit",
+    "clean_pdf_ingestion_error": "ValueError",
+    "unsupported_executable_header_outcome": "admit"
+  },
+  "retrieval_provenance": {
+    "version_hash_saved": true,
+    "version_hash_returned_to_caller": false
+  },
+  "quarantine_queue": {
+    "raw_fake_content_retained": true,
+    "raw_email_retained": true,
+    "directory_mode": "0o755",
+    "file_mode": "0o644",
+    "queue_count_after_reopen": 0
+  },
+  "live_proof": {
+    "script_passes_with_no_chroma_connection": true
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "chroma_connected": true,
+  "client_version": "1.5.9",
+  "collection_read_error_class": "Exception",
+  "collection_read_error": "{\"error\":\"InvalidCollection\",\"message\":\"Collection policy_clauses does not exist.\"} (trace ID: 0)",
+  "v1_heartbeat_status": 200,
+  "v2_heartbeat_status": 200
+}
