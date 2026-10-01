@@ -186,6 +186,7 @@ class PolicyVectorStore:
         metadatas: list[dict[str, Any]],
         ids: list[str],
         screening_results: list[Any],
+        source_contents: list[str | bytes] | None = None,
     ) -> None:
         """Add screened documents to the vector store.
 
@@ -204,13 +205,15 @@ class PolicyVectorStore:
             )
         if len(documents) != len(ids) or len(documents) != len(metadatas):
             raise ValueError("documents, metadatas, and ids must have the same length.")
+        if source_contents is not None and len(documents) != len(source_contents):
+            raise ValueError("documents and source_contents must have the same length.")
 
         from app.rag.ingestion_screening import ScreeningOutcome, compute_sha256
 
         # Validate each document against its screening result
-        for doc, meta, doc_id, screen in zip(
+        for index, (doc, meta, doc_id, screen) in enumerate(zip(
             documents, metadatas, ids, screening_results, strict=True
-        ):
+        )):
             if screen is None:
                 raise PermissionError(
                     f"Unscreened document rejected: document '{doc_id}' lacks a screening result."
@@ -222,14 +225,22 @@ class PolicyVectorStore:
                     f"with reasons: {reasons}"
                 )
             actual_hash = compute_sha256(doc)
-            if getattr(screen, "version_hash", None) != actual_hash:
+            indexed_hash = getattr(screen, "indexed_content_hash", None)
+            expected_indexed_hash = indexed_hash or getattr(screen, "version_hash", None)
+            if expected_indexed_hash != actual_hash:
                 raise ValueError(
                     f"Integrity check failed: document '{doc_id}' hash mismatch "
-                    f"(expected {getattr(screen, 'version_hash', None)}, got {actual_hash})."
+                    f"(expected {expected_indexed_hash}, got {actual_hash})."
+                )
+            source_content = source_contents[index] if source_contents is not None else doc
+            if getattr(screen, "version_hash", None) != compute_sha256(source_content):
+                raise ValueError(
+                    f"Integrity check failed: source document '{doc_id}' hash mismatch."
                 )
 
             # Ensure metadata carries provenance per rule 6
             meta["version_hash"] = screen.version_hash
+            meta["indexed_content_hash"] = actual_hash
             meta["retrieved_at"] = screen.timestamp
             if "url" not in meta or not meta["url"]:
                 meta["url"] = screen.source_url
@@ -254,6 +265,7 @@ class PolicyVectorStore:
                     "url": meta.get("url", ""),
                     "last_verified": meta.get("last_verified", ""),
                     "version_hash": meta.get("version_hash", ""),
+                    "indexed_content_hash": meta.get("indexed_content_hash", ""),
                     "retrieved_at": meta.get("retrieved_at", ""),
                 }
             )

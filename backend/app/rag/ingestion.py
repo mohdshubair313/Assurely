@@ -13,6 +13,7 @@ from typing import Any
 from app.rag.ingestion_screening import (
     ScreeningOutcome,
     ScreeningResult,
+    extract_document_text,
     get_quarantine_store,
     screen_document,
 )
@@ -56,15 +57,14 @@ def ingest_document(
     # ADMIT: add to vector store
     vector_store = get_vector_store()
     assigned_id = doc_id or f"doc-{uuid.uuid4()}"
-    text_content = (
-        content if isinstance(content, str) else content.decode("utf-8", errors="replace")
-    )
+    text_content = extract_document_text(content)
 
     vector_store.add(
         documents=[text_content],
         metadatas=[meta],
         ids=[assigned_id],
         screening_results=[screening_result],
+        source_contents=[content],
     )
     logger.info(
         "Ingestion successful: document admitted and indexed (id=%s, hash=%s, source=%s)",

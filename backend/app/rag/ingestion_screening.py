@@ -23,20 +23,26 @@ Outcomes:
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import logging
+import os
 import re
+import stat
 import threading
 import uuid
+from contextlib import nullcontext
 from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlunsplit
 
 from pydantic import BaseModel, Field
 
 from app.core.config import get_settings
+from app.core.correlation import correlation_scope, current_turn, node_scope
+from app.core.exception_log import safe_exception
 
 logger = logging.getLogger(__name__)
 
@@ -145,6 +151,7 @@ class ScreeningResult(BaseModel):
     version_hash: str
     timestamp: str
     metadata: dict[str, Any] = Field(default_factory=dict)
+    indexed_content_hash: str | None = None
 
     @property
     def is_admitted(self) -> bool:
@@ -168,6 +175,27 @@ def compute_sha256(content: str | bytes) -> str:
     """Compute the SHA-256 hex digest of the document content."""
     content_bytes = content.encode("utf-8") if isinstance(content, str) else content
     return hashlib.sha256(content_bytes).hexdigest()
+
+
+def extract_document_text(content: str | bytes) -> str:
+    """Return the exact UTF-8 text representation that screening/indexing use."""
+    if isinstance(content, str):
+        return content
+    if content.startswith(b"%PDF-"):
+        from pypdf import PdfReader
+
+        reader = PdfReader(io.BytesIO(content), strict=True)
+        extracted = "\n".join(page.extract_text() or "" for page in reader.pages)
+        if not extracted.strip():
+            raise ValueError("PDF contains no extractable text")
+        return extracted
+    try:
+        text = content.decode("utf-8", errors="strict")
+    except UnicodeDecodeError as exc:
+        raise ValueError("Unsupported binary document type") from exc
+    if "\x00" in text:
+        raise ValueError("Unsupported binary document type")
+    return text
 
 
 def check_domain_allowlist(source_url: str) -> list[str]:
@@ -309,6 +337,34 @@ def screen_document(
     source_url: str,
     metadata: dict[str, Any] | None = None,
 ) -> ScreeningResult:
+    """Screen within the caller's correlation scope, creating one if absent.
+
+    Request-scoped ingestion reuses its session/trace IDs and profile snapshot.
+    Background or direct screening gets its own trace ID. Document text and
+    source URL are added only temporarily as scrub context and then discarded.
+    """
+    active_turn = current_turn.get()
+    scope = nullcontext(active_turn) if active_turn is not None else correlation_scope()
+    with scope as turn, node_scope("ingestion-screening"):
+        previous_profile = turn.profile_snapshot
+        scrub_context = dict(previous_profile or {})
+        if isinstance(content, bytes):
+            scrub_context["screening_document"] = content.decode("utf-8", errors="replace")
+        else:
+            scrub_context["screening_document"] = content
+        scrub_context["screening_source_url"] = source_url
+        turn.profile_snapshot = scrub_context
+        try:
+            return _screen_document_impl(content, source_url, metadata)
+        finally:
+            turn.profile_snapshot = previous_profile
+
+
+def _screen_document_impl(
+    content: str | bytes,
+    source_url: str,
+    metadata: dict[str, Any] | None = None,
+) -> ScreeningResult:
     """Screen an incoming document across all deterministic security checks.
 
     Fail-closed: any unhandled exception automatically results in QUARANTINE.
@@ -318,6 +374,7 @@ def screen_document(
     meta = dict(metadata or {})
 
     reasons: list[str] = []
+    text_content = ""
 
     try:
         # 1. Source domain allowlist check
@@ -329,14 +386,16 @@ def screen_document(
         # 3. PDF active content check (if binary PDF)
         reasons.extend(check_pdf_active_content(content))
 
-        # Extract text representation for text-based checks
-        if isinstance(content, bytes):
-            try:
-                text_content = content.decode("utf-8", errors="replace")
-            except Exception:
-                text_content = ""
-        else:
-            text_content = content
+        # Extract the exact representation sent to the vector store. Screening
+        # the original bytes alone misses compressed or encoded PDF text.
+        try:
+            text_content = extract_document_text(content)
+        except Exception:
+            text_content = ""
+            if isinstance(content, bytes) and content.startswith(b"%PDF-"):
+                reasons.append("PDF_TEXT_EXTRACTION_FAILED: No safe text could be extracted")
+            else:
+                reasons.append("UNSUPPORTED_FILE_TYPE: Document is not supported UTF-8 text or PDF")
 
         if text_content:
             # 4. Hidden text, bidi controls, and comment blocks
@@ -352,8 +411,17 @@ def screen_document(
             reasons.extend(check_ranking_language(text_content))
 
     except Exception as exc:
-        logger.exception("Unexpected error during ingestion screening: %s", exc)
-        reasons.append(f"SCREENING_ERROR: Screening execution failed unexpectedly ({exc})")
+        error_record = safe_exception(exc)
+        logger.error(
+            "Unexpected error during ingestion screening: "
+            "exception_class=%s message=%s",
+            error_record["exception_class"],
+            error_record["message"],
+        )
+        reasons.append(
+            "SCREENING_ERROR: Screening execution failed unexpectedly "
+            f"(exception_class={error_record['exception_class']})"
+        )
 
     if reasons:
         outcome = ScreeningOutcome.QUARANTINE
@@ -378,11 +446,12 @@ def screen_document(
         version_hash=version_hash,
         timestamp=now_iso,
         metadata=meta,
+        indexed_content_hash=(compute_sha256(text_content) if text_content else None),
     )
 
 
 class QuarantineStore:
-    """Thread-safe review queue for quarantined documents."""
+    """Private, restartable review queue for quarantined document metadata."""
 
     def __init__(self, log_path: Path | None = None) -> None:
         self._lock = threading.Lock()
@@ -393,6 +462,80 @@ class QuarantineStore:
             self.log_path = log_dir / "quarantine_records.jsonl"
         else:
             self.log_path = log_path
+        self.log_path = self.log_path.absolute()
+        self._secure_storage()
+        self._load_records()
+
+    def _secure_storage(self) -> None:
+        """Create the queue with owner-only POSIX permissions and reject links."""
+        if os.name != "posix":
+            raise RuntimeError(
+                "Restricted quarantine storage requires POSIX permissions; use Docker"
+            )
+        if self.log_path.resolve(strict=False) != self.log_path:
+            raise RuntimeError("Quarantine path must not contain symlinks")
+        self.log_path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        parent = self.log_path.parent
+        parent_info = parent.stat()
+        if parent_info.st_uid != os.geteuid() or not stat.S_ISDIR(parent_info.st_mode):
+            raise RuntimeError("Quarantine directory must belong to the service account")
+        parent.chmod(0o700)
+        flags = os.O_CREAT | os.O_WRONLY | os.O_APPEND | getattr(os, "O_NOFOLLOW", 0)
+        fd = os.open(self.log_path, flags, 0o600)
+        try:
+            info = os.fstat(fd)
+            if (
+                not stat.S_ISREG(info.st_mode)
+                or info.st_uid != os.geteuid()
+                or info.st_nlink != 1
+            ):
+                raise RuntimeError(
+                    "Quarantine file must be a regular file owned by the service account"
+                )
+            os.fchmod(fd, 0o600)
+        finally:
+            os.close(fd)
+
+    def _load_records(self) -> None:
+        """Restore persisted review records on process startup; fail on corruption."""
+        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+        fd = os.open(self.log_path, flags)
+        with os.fdopen(fd, "r", encoding="utf-8") as stream:
+            for line_number, line in enumerate(stream, start=1):
+                if not line.strip():
+                    continue
+                try:
+                    record = QuarantineRecord.model_validate_json(line)
+                except Exception as exc:
+                    raise RuntimeError(
+                        f"Quarantine record file is invalid at line {line_number}"
+                    ) from exc
+                self._records.append(record)
+
+    @staticmethod
+    def _safe_source_url(source_url: str) -> str:
+        """Drop credentials, query strings, and fragments before persistence."""
+        try:
+            parsed = urlparse(source_url)
+            if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+                return "[SOURCE REDACTED]"
+            host = parsed.hostname
+            if ":" in host:
+                host = f"[{host}]"
+            try:
+                if parsed.port is not None:
+                    host = f"{host}:{parsed.port}"
+            except ValueError:
+                return "[SOURCE REDACTED]"
+            return urlunsplit((parsed.scheme, host, parsed.path, "", ""))
+        except Exception:
+            return "[SOURCE REDACTED]"
+
+    @staticmethod
+    def _reason_codes(reasons: list[str]) -> list[str]:
+        """Persist stable screening categories, never matched source text."""
+        codes = [reason.partition(":")[0].strip()[:80] for reason in reasons]
+        return list(dict.fromkeys(code or "SCREENING_ERROR" for code in codes))
 
     def add_quarantine(
         self,
@@ -400,29 +543,42 @@ class QuarantineStore:
         content: str | bytes,
     ) -> QuarantineRecord:
         """Add a quarantined document result to the in-memory queue and persistent log."""
-        if isinstance(content, bytes):
-            snippet = content[:200].decode("utf-8", errors="replace")
-        else:
-            snippet = content[:200]
+        reason_codes = self._reason_codes(screening_result.reasons)
 
         record = QuarantineRecord(
             record_id=str(uuid.uuid4()),
-            reason=screening_result.reasons[0] if screening_result.reasons else "Unknown",
-            all_reasons=screening_result.reasons,
-            source_url=screening_result.source_url,
+            reason=reason_codes[0] if reason_codes else "SCREENING_ERROR",
+            all_reasons=reason_codes,
+            source_url=self._safe_source_url(screening_result.source_url),
             version_hash=screening_result.version_hash,
             timestamp=screening_result.timestamp,
-            document_snippet=snippet,
+            document_snippet="[DOCUMENT CONTENT REDACTED]",
         )
 
         with self._lock:
-            self._records.append(record)
+            self._secure_storage()
+            flags = os.O_WRONLY | os.O_APPEND | getattr(os, "O_NOFOLLOW", 0)
+            fd = os.open(self.log_path, flags)
             try:
-                self.log_path.parent.mkdir(parents=True, exist_ok=True)
-                with open(self.log_path, "a", encoding="utf-8") as f:
-                    f.write(json.dumps(record.model_dump(), ensure_ascii=False) + "\n")
-            except Exception as e:
-                logger.error("Failed to write quarantine record to %s: %s", self.log_path, e)
+                info = os.fstat(fd)
+                if (
+                    not stat.S_ISREG(info.st_mode)
+                    or info.st_uid != os.geteuid()
+                    or info.st_nlink != 1
+                ):
+                    raise RuntimeError("Unsafe quarantine record file")
+                os.fchmod(fd, 0o600)
+                payload = (
+                    json.dumps(record.model_dump(), ensure_ascii=False) + "\n"
+                ).encode("utf-8")
+                remaining = memoryview(payload)
+                while remaining:
+                    written = os.write(fd, remaining)
+                    remaining = remaining[written:]
+                os.fsync(fd)
+            finally:
+                os.close(fd)
+            self._records.append(record)
 
         return record
 

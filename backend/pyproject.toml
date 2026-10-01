@@ -36,6 +36,7 @@ dependencies = [
     # Validation & settings
     "pydantic>=2.10.0",
     "pydantic-settings>=2.7.0",
+    "pypdf>=5.0.0,<7.0.0",
 
     # Observability
     "langfuse>=3.0.0",
