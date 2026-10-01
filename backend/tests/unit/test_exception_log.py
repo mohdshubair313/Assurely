@@ -230,6 +230,152 @@ def test_allowlisted_exception_retains_useful_message(logs) -> None:
     assert "localhost:5432" not in stream.getvalue()
 
 
+def test_allowlisted_exception_scrubs_nested_profile_values(logs) -> None:
+    """Infrastructure allowlisting must not bypass scrubbing of nested profile data."""
+    boundary, stream = logs
+    fake_condition = "FAKE_PED_CONDITION_8472"
+    with correlation_scope("allowlist-profile-test") as turn, node_scope(
+        "health-domain-agent"
+    ):
+        turn.profile_snapshot = {"pre_existing_conditions": [fake_condition]}
+        try:
+            raise ConnectionError(
+                f"Database unavailable while evaluating {fake_condition}"
+            )
+        except ConnectionError:
+            logging.getLogger("app.test_exception_log").exception("DB down")
+
+    rows = records(boundary)
+    assert len(rows) == 1
+    assert rows[0]["exception_class"] == "ConnectionError"
+    assert fake_condition not in rows[0]["message"]
+    assert fake_condition not in stream.getvalue()
+    assert "Database unavailable" in rows[0]["message"]
+
+
+def test_free_form_exception_messages_are_redacted_without_profile_context(logs) -> None:
+    """PII-free generated or request text is not safe merely because it lacks a pattern."""
+    boundary, stream = logs
+    fake_generated = "FAKE_GENERATED_SENTENCE_OR_USER_TEXT_59381"
+    logger = logging.getLogger("app.test_exception_log")
+
+    for error in (RuntimeError, ConnectionError):
+        try:
+            raise error(fake_generated)
+        except error:
+            logger.exception("Synthetic failure")
+
+    rows = records(boundary)
+    assert len(rows) == 2
+    assert all(fake_generated not in row["message"] for row in rows)
+    assert all(row["message"] == "[MESSAGE REDACTED]" for row in rows)
+    assert fake_generated not in stream.getvalue()
+
+
+def test_screening_exception_reuses_request_correlation_and_profile_context(
+    logs, monkeypatch
+) -> None:
+    """Request-scoped screening errors inherit trace IDs and document scrub values."""
+    from app.core import exception_log
+    from app.rag import ingestion_screening
+
+    boundary, stream = logs
+    fake_profile = "FAKE_PROFILE_SCREENING_7842"
+    fake_document = "FAKE_DOCUMENT_CONTENT_SCREENING_9281"
+    captured_values: set[str] = set()
+    original_safe_exception = exception_log.safe_exception
+
+    def observe_scrub_context(exc: BaseException) -> dict[str, object]:
+        captured_values.update(exception_log._get_profile_values())
+        return original_safe_exception(exc)
+
+    monkeypatch.setattr(exception_log, "safe_exception", observe_scrub_context)
+    session_id = "11111111-2222-4333-8444-555555555555"
+    with correlation_scope(session_id) as turn:
+        original_profile = {"name": fake_profile}
+        turn.profile_snapshot = original_profile
+        with patch.object(
+            ingestion_screening,
+            "check_domain_allowlist",
+            side_effect=RuntimeError(fake_document),
+        ):
+            result = ingestion_screening.screen_document(
+                fake_document,
+                "https://www.hdfcergo.com/policy.pdf",
+            )
+        assert result.outcome.value == "quarantine"
+        assert turn.profile_snapshot == original_profile
+        expected_trace_id = turn.trace_id
+
+    rows = records(boundary)
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["session_id"] == str(database_session_id(session_id))
+    assert row["trace_id"] == expected_trace_id
+    assert row["node"] == "ingestion-screening"
+    assert fake_profile in captured_values
+    assert fake_document in captured_values
+    assert fake_profile not in json.dumps(row) + stream.getvalue()
+    assert fake_document not in json.dumps(row) + stream.getvalue()
+
+
+def test_standalone_screening_creates_trace_context_for_exceptions(logs, monkeypatch) -> None:
+    """Screening outside HTTP still gets a trace ID and document-aware scrub scope."""
+    from app.core import exception_log
+    from app.rag import ingestion_screening
+
+    boundary, _ = logs
+    captured_values: set[str] = set()
+    original_safe_exception = exception_log.safe_exception
+
+    def observe_scrub_context(exc: BaseException) -> dict[str, object]:
+        captured_values.update(exception_log._get_profile_values())
+        return original_safe_exception(exc)
+
+    monkeypatch.setattr(exception_log, "safe_exception", observe_scrub_context)
+    fake_document = "FAKE_STANDALONE_SCREENING_DOCUMENT_3872"
+    with patch.object(
+        ingestion_screening,
+        "check_domain_allowlist",
+        side_effect=RuntimeError(fake_document),
+    ):
+        ingestion_screening.screen_document(
+            fake_document,
+            "https://www.hdfcergo.com/policy.pdf",
+        )
+
+    rows = records(boundary)
+    assert len(rows) == 1
+    assert rows[0]["session_id"] is None
+    assert rows[0]["trace_id"]
+    assert rows[0]["node"] == "ingestion-screening"
+    assert fake_document in captured_values
+    assert fake_document not in json.dumps(rows)
+
+
+def test_standalone_screening_logs_only_sanitized_exception(caplog, monkeypatch) -> None:
+    """Without app lifespan logging handlers, direct screening still emits no raw error text."""
+    from app.rag import ingestion_screening
+
+    fake_document = "FAKE_STANDALONE_EXCEPTION_TEXT_72391"
+    with (
+        patch.object(
+            ingestion_screening,
+            "check_domain_allowlist",
+            side_effect=RuntimeError(fake_document),
+        ),
+        caplog.at_level(logging.ERROR, logger="app.rag.ingestion_screening"),
+    ):
+        result = ingestion_screening.screen_document(
+            fake_document,
+            "https://www.hdfcergo.com/policy.pdf",
+        )
+
+    assert fake_document not in caplog.text
+    assert "[MESSAGE REDACTED]" in caplog.text
+    assert all(fake_document not in reason for reason in result.reasons)
+
+
 def test_non_allowlisted_exception_scrubs_profile_values(logs, monkeypatch) -> None:
     """Non-allowlisted RuntimeError with fake profile values gets them scrubbed."""
     boundary, stream = logs
@@ -286,10 +432,8 @@ def test_non_allowlisted_exception_scrubs_profile_values(logs, monkeypatch) -> N
 
 @pytest.mark.asyncio
 async def test_failing_database_insert_hides_parameters(logs) -> None:
-    """Failing SQL statement never exposes bound profile values in exception sink."""
-    from sqlalchemy import text
-
-    from app.db.session import async_engine
+    """SQLAlchemy's hidden-parameter error representation is tested without Postgres."""
+    from sqlalchemy.exc import StatementError
 
     boundary, stream = logs
     fake_name = "SuperSecretPerson"
@@ -297,14 +441,13 @@ async def test_failing_database_insert_hides_parameters(logs) -> None:
 
     with correlation_scope("db-fail-test"), node_scope("persist-memory"):
         try:
-            async with async_engine.connect() as conn:
-                await conn.execute(
-                    text(
-                        "INSERT INTO non_existent_audit_table (user_name, user_email) "
-                        "VALUES (:name, :email)"
-                    ),
-                    {"name": fake_name, "email": fake_email},
-                )
+            raise StatementError(
+                "Database execution failed",
+                "INSERT INTO users (name, email) VALUES (:name, :email)",
+                {"name": fake_name, "email": fake_email},
+                RuntimeError("driver error"),
+                hide_parameters=True,
+            )
         except Exception:
             logging.getLogger("app.test_exception_log").exception("DB insert failed")
 

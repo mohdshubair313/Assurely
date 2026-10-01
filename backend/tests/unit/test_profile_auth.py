@@ -558,6 +558,15 @@ def test_owner_can_read_own_session(
             "messages": [{"role": "user", "content": "hello"}],
             "user_id": str(USER_ID),
             "intent": "health",
+            "approved": True,
+            "delivery_hold": False,
+            "escalation": False,
+            "advisor_notification": {},
+            "output": {
+                "report_status": "ready",
+                "reply": "Verified synthetic response",
+                "sentences": [{"text": "Verified synthetic response"}],
+            },
             "retrieved_facts": [],
             "calculator_outputs": {},
         }

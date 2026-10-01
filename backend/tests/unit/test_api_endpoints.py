@@ -3,6 +3,7 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.core.security import optional_authenticated_user_id, require_authenticated_user_id
@@ -65,12 +66,132 @@ def test_session_endpoint() -> None:
     checkpoint = SimpleNamespace(
         values={"messages": [{"role": "user", "content": "hi"}]}
     )
-    with patch.object(message_api._app_graph, "aget_state", AsyncMock(return_value=checkpoint)):
+    db = AsyncMock()
+    db.__aenter__.return_value = db
+    db.get.return_value = None
+    with (
+        patch.object(message_api._app_graph, "aget_state", AsyncMock(return_value=checkpoint)),
+        patch("app.api.v1.sessions.AsyncSessionLocal", return_value=db),
+    ):
         response = client.get("/v1/session/sess-abc-123")
         assert response.status_code == 200
         data = response.json()
         assert data["session_id"] == "sess-abc-123"
         assert data["status"] == "active"
+
+
+def test_held_message_session_read_withholds_citations_and_calculators() -> None:
+    """A held turn created through POST cannot leak claim data through GET."""
+    from types import SimpleNamespace
+
+    from app.api.v1 import message as message_api
+
+    session_id = "held-session-2026"
+    held_state = {
+        "messages": [
+            {"role": "user", "content": "synthetic test"},
+            {"role": "assistant", "content": "unreleased synthetic advice"},
+        ],
+        "intent": "health",
+        "approved": False,
+        "escalation": True,
+        "delivery_hold": True,
+        "advisor_notification": {"status": "queued"},
+        "output": {
+            "report_status": "ready",
+            "reply": "Synthetic report",
+            "sentences": [{"text": "Synthetic report"}],
+        },
+        "retrieved_facts": [{"claim": "withheld citation", "source": "test"}],
+        "calculator_outputs": {"recommended_cover": 123456},
+    }
+    checkpoint = SimpleNamespace(values=held_state)
+    graph = MagicMock()
+    graph.aget_state = AsyncMock(side_effect=[None, checkpoint])
+    graph.ainvoke = AsyncMock(return_value=held_state)
+    db = AsyncMock()
+    db.__aenter__.return_value = db
+    db.get.return_value = None
+
+    with (
+        patch.object(message_api, "_app_graph", graph),
+        patch("app.api.v1.message.AsyncSessionLocal", return_value=db),
+        patch("app.api.v1.sessions.AsyncSessionLocal", return_value=db),
+    ):
+        post = client.post(
+            "/v1/message",
+            json={"session_id": session_id, "user_message": "synthetic test"},
+        )
+        assert post.status_code == 200
+        assert post.json()["delivery_hold"] is True
+        assert post.json()["citations"] == []
+        assert post.json()["calculator_outputs"] == {}
+
+        get = client.get(f"/v1/session/{session_id}")
+
+    assert get.status_code == 200
+    data = get.json()
+    assert data["citations"] == []
+    assert data["calculator_outputs"] == {}
+    assert data["messages"] == []
+
+
+@pytest.mark.parametrize(
+    "hold_reason",
+    ["delivery_hold", "approval", "escalation", "notification", "report_not_ready"],
+)
+def test_session_read_rechecks_each_delivery_gate(hold_reason: str) -> None:
+    """Attempt to recover held data when exactly one delivery condition blocks it."""
+    from types import SimpleNamespace
+
+    from app.api.v1 import message as message_api
+
+    state = {
+        "messages": [
+            {"role": "user", "content": "synthetic test"},
+            {"role": "assistant", "content": "unreleased synthetic advice"},
+        ],
+        "intent": "health",
+        "approved": True,
+        "escalation": False,
+        "delivery_hold": False,
+        "advisor_notification": {},
+        "output": {
+            "report_status": "ready",
+            "reply": "Synthetic report",
+            "sentences": [{"text": "Synthetic report"}],
+        },
+        "retrieved_facts": [{"claim": "attack citation", "source": "test"}],
+        "calculator_outputs": {"cover": 987654},
+    }
+    if hold_reason == "delivery_hold":
+        state["delivery_hold"] = True
+    elif hold_reason == "approval":
+        state["approved"] = False
+    elif hold_reason == "escalation":
+        state["escalation"] = True
+    elif hold_reason == "notification":
+        state["advisor_notification"] = {"status": "queued"}
+    else:
+        state["output"]["report_status"] = "pending"
+
+    graph = MagicMock()
+    graph.aget_state = AsyncMock(return_value=SimpleNamespace(values=state))
+    db = AsyncMock()
+    db.__aenter__.return_value = db
+    db.get.return_value = None
+
+    with (
+        patch.object(message_api, "_app_graph", graph),
+        patch("app.api.v1.sessions.AsyncSessionLocal", return_value=db),
+    ):
+        response = client.get(f"/v1/session/attack-{hold_reason}")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["citations"] == []
+    assert payload["calculator_outputs"] == {}
+    assert payload["messages"] == []
 
 
 def test_post_message_endpoint() -> None:

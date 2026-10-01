@@ -180,26 +180,61 @@ def _get_profile_values() -> frozenset[str]:
     values: set[str] = set()
     # Turn may carry a profile snapshot for scrubbing context.
     profile = getattr(turn, "profile_snapshot", None)
-    if isinstance(profile, dict):
-        for key in ("name", "city", "phone", "email", "aadhaar", "pan"):
-            val = profile.get(key)
-            if isinstance(val, str) and val.strip():
-                values.add(val.strip())
-        # Also scrub numeric profile values as strings
-        for key in ("age", "dependents"):
-            val = profile.get(key)
-            if val is not None:
-                values.add(str(val))
+    def collect(value: object) -> None:
+        if isinstance(value, dict):
+            for nested in value.values():
+                collect(nested)
+        elif isinstance(value, (list, tuple, set, frozenset)):
+            for nested in value:
+                collect(nested)
+        elif isinstance(value, str) and value.strip():
+            values.add(value.strip())
+        elif isinstance(value, (int, float)) and not isinstance(value, bool):
+            values.add(str(value))
+
+    collect(profile)
     return frozenset(values)
+
+
+def _safe_exception_message(class_name: str, message: str) -> str:
+    """Keep only narrow, structured diagnostics; redact arbitrary free-form text."""
+    if class_name == "ConnectionError":
+        safe_patterns = (
+            re.compile(
+                r"Connection refused: [A-Za-z0-9.-]+:\d{1,5} "
+                r"- cannot connect to Postgres"
+            ),
+            re.compile(r"Database unavailable while evaluating \[PROFILE\]"),
+            re.compile(
+                r"Failed to connect to [a-z0-9+.-]+://[A-Za-z0-9_.-]+:\[REDACTED\]"
+                r"@[A-Za-z0-9.-]+:\d{1,5}/[A-Za-z0-9_.-]+"
+            ),
+        )
+        if any(pattern.fullmatch(message) for pattern in safe_patterns):
+            return message
+
+    if class_name == "HTTPStatusError":
+        match = re.search(
+            r"https?://[A-Za-z0-9.-]+(?::\d+)?/v1/"
+            r"(?:chat/completions|embeddings|responses|models)",
+            message,
+        )
+        if match:
+            return f"HTTP request failed for {match.group(0)}"
+
+    if message.startswith("Failed for user "):
+        # Preserve the fixed diagnostic prefix, never its free-form details.
+        return "Failed for user [PROFILE]"
+    return "[MESSAGE REDACTED]"
 
 
 def safe_exception(exc: BaseException) -> dict[str, Any]:
     """Retain class, stack locations, and conditionally scrubbed messages.
 
-    Secrets, credentials, and URL query strings are scrubbed from EVERY message,
-    including allowlisted infrastructure exception classes. Allowlisted classes
-    keep their non-secret diagnostic text intact. Non-allowlisted classes get
-    additional PII and profile-value scrubbing.
+    Secrets, credentials, URL query strings, PII patterns, and known profile
+    values are scrubbed from every exception class, including infrastructure
+    exceptions. Only narrow, structured infrastructure diagnostics survive;
+    arbitrary free-form text is redacted because it can echo user or model data.
     """
     profile_values = _get_profile_values()
     chain: list[dict[str, Any]] = []
@@ -234,12 +269,12 @@ def safe_exception(exc: BaseException) -> dict[str, Any]:
         # Apply secret scrubber to every message, allowlisted ones included.
         raw = scrub_secrets(raw)
 
-        if class_name in ALLOWLISTED_EXCEPTION_CLASSES:
-            # Infrastructure errors: keep message for debugging (secrets already scrubbed).
-            message = raw
-        else:
-            # Scrub PII and known profile values; keep the structural info.
-            message = scrub_message(raw, profile_values)
+        # Neither class allowlisting nor profile-value scrubbing makes arbitrary
+        # exception text safe; retain only fixed, structured diagnostics.
+        message = _safe_exception_message(
+            class_name,
+            scrub_message(raw, profile_values),
+        )
 
         chain.append({
             "exception_class": safe_class,
