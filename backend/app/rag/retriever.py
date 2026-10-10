@@ -4,7 +4,7 @@ Used by domain agents (health_domain_agent, life_domain_agent) to
 find relevant policy clause wording for a given user query or profile.
 
 Returns structured results with citation metadata:
-  {claim, source, url, retrieved_at, last_verified}
+  {claim, source, url, retrieved_at, last_verified, version_hash, indexed_content_hash}
 
 RAG is used ONLY for clause wording and explanations — never for
 numbers, eligibility, or dates (AGENTS.md rule 5). Those come from
@@ -52,6 +52,8 @@ def retrieve_health_facts(query: str, top_k: int = 3) -> list[dict[str, Any]]:
                 "url": url,
                 "last_verified": last_verified,
                 "retrieved_at": retrieved_at,
+                "version_hash": str(fact.get("version_hash", "")).strip(),
+                "indexed_content_hash": str(fact.get("indexed_content_hash", "")).strip(),
             }
         )
 

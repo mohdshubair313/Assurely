@@ -1,0 +1,61 @@
+{
+  "timestamp": "2026-10-01T15:26:56.080052+00:00",
+  "checks": {
+    "heartbeat": {
+      "status": "OK",
+      "value": 1790868418072378610
+    },
+    "collection": {
+      "status": "OK",
+      "name": "policy_clauses",
+      "document_count": 6
+    },
+    "seeded_documents": {
+      "expected_count": 6,
+      "actual_count": 6,
+      "match": true
+    },
+    "similarity_search": {
+      "status": "OK",
+      "query": "pre-existing disease waiting period",
+      "result_count": 3,
+      "results": [
+        {
+          "id": "hdfc-optima-waiting-period",
+          "snippet": "Initial waiting period of 30 days applies for any illness except accident. Pre-e...",
+          "source": "HDFC ERGO Optima Secure Policy Wording Section 4.2 (UIN: HDFHLIP21557V022021)",
+          "version_hash": "c5477f4ebdec423f5235b8871f3a60344595c3f4730e607fbafd0a8d034d1d8c",
+          "indexed_content_hash": "c5477f4ebdec423f5235b8871f3a60344595c3f4730e607fbafd0a8d034d1d8c",
+          "last_verified": "2024-01-01"
+        },
+        {
+          "id": "star-comprehensive-hospitalization",
+          "snippet": "Covers in-patient hospitalization expenses, pre-hospitalization (60 days), post-...",
+          "source": "Star Health Comprehensive Policy Wording Section B.1 (UIN: SHAHLIP21254V052021)",
+          "version_hash": "4670991eca5188300137846f34d7c8a7b76c1bec5fa94a6c46f2076c882f9a6a",
+          "indexed_content_hash": "4670991eca5188300137846f34d7c8a7b76c1bec5fa94a6c46f2076c882f9a6a",
+          "last_verified": "2024-01-01"
+        },
+        {
+          "id": "care-supreme-unlimited-recharge",
+          "snippet": "Provides unlimited automatic restoration of sum insured for same or different il...",
+          "source": "Care Supreme Policy Wording Section 2.1 (UIN: CHIHLIP22158V012122)",
+          "version_hash": "341f72b1d5581112268ecf31de7edee5ff9916c8022a3c2f49ff4ef894cbc6b0",
+          "indexed_content_hash": "341f72b1d5581112268ecf31de7edee5ff9916c8022a3c2f49ff4ef894cbc6b0",
+          "last_verified": "2024-01-01"
+        }
+      ]
+    },
+    "version_hash_in_metadata": {
+      "status": "OK",
+      "all_results_have_hash": true
+    },
+    "get_by_id": {
+      "status": "OK",
+      "id": "care-supreme-cumulative-bonus",
+      "has_source": true,
+      "has_version_hash": true
+    }
+  },
+  "overall": "PASS"
+}

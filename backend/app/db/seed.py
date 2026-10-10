@@ -280,6 +280,10 @@ async def seed_data(session: AsyncSession) -> dict[str, int]:
 async def main() -> None:
     async with AsyncSessionLocal() as session:
         await seed_data(session)
+    # Ensure vector store clauses are initialized and seeded into ChromaDB
+    from app.rag.vector_store import get_vector_store
+
+    await asyncio.to_thread(get_vector_store)
 
 
 if __name__ == "__main__":

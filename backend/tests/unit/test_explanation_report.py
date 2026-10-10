@@ -101,3 +101,80 @@ async def test_report_rejects_unsupported_or_noncompliant_sentences(content: str
     ):
         result = await explanation_report_node(_state())
     assert result == {"output": {}}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("truncated_content", ['{"sentences":[', '{"sentences":[]}'])
+async def test_report_retries_explicit_truncation_once_with_same_evidence(
+    truncated_content: str,
+) -> None:
+    truncated = LLMResult(
+        content=truncated_content, provider="mock", model="mock-model", finish_reason="length"
+    )
+    complete = LLMResult(
+        content='{"sentences":[{"text":"The policy includes a waiting period.",'
+        '"evidence_ids":["E1"]}]}',
+        provider="mock",
+        model="mock-model",
+        finish_reason="stop",
+    )
+    with patch(
+        "app.graph.nodes.explanation_report.llm_call",
+        new=AsyncMock(side_effect=[truncated, complete]),
+    ) as llm:
+        result = await explanation_report_node(_state(escalation=True))
+    assert result["output"]["report_status"] == "ready"
+    calls = llm.await_args_list
+    assert [call.kwargs["max_tokens"] for call in calls] == [2048, 4096]
+    assert calls[0].kwargs["messages"] == calls[1].kwargs["messages"]
+    assert result["output"]["sentences"][0]["citations"][0]["source"] == (
+        "Policy wording, section 4"
+    )
+
+
+@pytest.mark.asyncio
+async def test_report_repeated_truncation_remains_empty_and_does_not_retry_forever() -> None:
+    truncated = LLMResult(
+        content='{"sentences":[', provider="mock", model="mock-model", finish_reason="length"
+    )
+    with patch(
+        "app.graph.nodes.explanation_report.llm_call",
+        new=AsyncMock(return_value=truncated),
+    ) as llm:
+        result = await explanation_report_node(_state())
+    assert result == {"output": {}}
+    assert llm.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_report_malformed_json_without_truncation_is_not_blindly_retried() -> None:
+    malformed = LLMResult(
+        content='{"sentences":[', provider="mock", model="mock-model", finish_reason="stop"
+    )
+    with patch(
+        "app.graph.nodes.explanation_report.llm_call",
+        new=AsyncMock(return_value=malformed),
+    ) as llm:
+        result = await explanation_report_node(_state())
+    assert result == {"output": {}}
+    assert llm.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_report_retry_still_rejects_an_unknown_citation() -> None:
+    truncated = LLMResult(
+        content='{"sentences":[', provider="mock", model="mock-model", finish_reason="length"
+    )
+    unsupported = LLMResult(
+        content='{"sentences":[{"text":"Unsupported claim.","evidence_ids":["E99"]}]}',
+        provider="mock",
+        model="mock-model",
+        finish_reason="stop",
+    )
+    with patch(
+        "app.graph.nodes.explanation_report.llm_call",
+        new=AsyncMock(side_effect=[truncated, unsupported]),
+    ) as llm:
+        result = await explanation_report_node(_state())
+    assert result == {"output": {}}
+    assert llm.await_count == 2

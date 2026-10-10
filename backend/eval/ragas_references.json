@@ -1,0 +1,26 @@
+{
+  "case_01_normal_health": {
+    "retrieval_reference": "The retrieved policy wording should contain clauses relevant to the requested family health cover, such as hospitalization benefits or waiting-period wording. This fixture does not assert a product-specific recommendation."
+  },
+  "case_02_edge_entry_age_cap": {
+    "retrieval_reference": null
+  },
+  "case_03_missing_info_loop": {
+    "retrieval_reference": null
+  },
+  "case_04_conflicting_sources": {
+    "retrieval_reference": "HDFC ERGO Optima Secure Policy Wording Section 4.2 states an initial waiting period of 30 days for illness other than accidents, a 36-month continuous-coverage waiting period for pre-existing disease, and a 24-month waiting period for named ailments. This text is a seeded test fixture and is not independently verified."
+  },
+  "case_05_outdated_policy": {
+    "retrieval_reference": null
+  },
+  "case_06_malicious_injection": {
+    "retrieval_reference": null
+  },
+  "case_07_ambiguous_intent": {
+    "retrieval_reference": null
+  },
+  "case_08_provenance_diabetes_comparison": {
+    "retrieval_reference": "For this retrieval-layer check, the relevant seeded clause is HDFC ERGO Optima Secure Policy Wording Section 4.2 concerning initial, pre-existing disease, and named-ailment waiting periods. Eligibility, exact limits, and numeric policy terms must come from deterministic policy_terms lookups, not RAG. The fixture corpus does not include an equivalent Care Supreme waiting-period clause, so its absence is an expected corpus-coverage gap to observe. Seeded text is not independently verified."
+  }
+}

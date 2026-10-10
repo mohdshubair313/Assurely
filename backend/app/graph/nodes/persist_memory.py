@@ -67,7 +67,10 @@ def _sources_per_claim(state: SessionState) -> dict[str, list[dict[str, Any]]]:
         sources.setdefault(str(text), []).append(
             {
                 key: claim[key]
-                for key in ("source", "url", "last_verified", "retrieved_at", "conflict")
+                for key in (
+                    "source", "url", "last_verified", "retrieved_at",
+                    "conflict", "version_hash",
+                )
                 if claim.get(key) is not None
             }
         )

@@ -290,6 +290,8 @@ class PolicyVectorStore:
                             "url": meta.get("url", ""),
                             "last_verified": meta.get("last_verified", ""),
                             "retrieved_at": datetime.now(UTC).isoformat(),
+                            "version_hash": meta.get("version_hash", ""),
+                            "indexed_content_hash": meta.get("indexed_content_hash", ""),
                         }
                     )
                 if results:
@@ -320,6 +322,8 @@ class PolicyVectorStore:
                     "url": item["url"],
                     "last_verified": item["last_verified"],
                     "retrieved_at": datetime.now(UTC).isoformat(),
+                    "version_hash": item.get("version_hash", ""),
+                    "indexed_content_hash": item.get("indexed_content_hash", ""),
                 }
             )
         return results

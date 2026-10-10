@@ -83,6 +83,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     cleanup = asyncio.create_task(retention_loop())
     try:
+        from app.rag.vector_store import get_vector_store
+
+        await asyncio.to_thread(get_vector_store)
+    except Exception as e:
+        logger.warning("Could not initialize vector store on startup: %s", e)
+
+    try:
         logger.info("Application started")
         yield
     finally:

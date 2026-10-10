@@ -1,0 +1,16 @@
+[
+  {
+    "cli_exit_code": 0,
+    "trace_id": "21285a2bc3c443c381d2ba9907d77da9",
+    "http_status": 200,
+    "observation_count": 1,
+    "trace_found": true
+  },
+  {
+    "cli_exit_code": 0,
+    "trace_id": "9ef0bad4deb8417c9bbf492ce73ffe81",
+    "http_status": 200,
+    "observation_count": 1,
+    "trace_found": true
+  }
+]

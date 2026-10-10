@@ -1,0 +1,314 @@
+{
+  "timestamp": "2026-10-02T06:02:23.521535+00:00",
+  "runner": "RAGAS collections API",
+  "evaluator_model": "openai/gpt-oss-20b",
+  "evaluator_provider": "Groq",
+  "embedding_model": "gemini-embedding-2-preview",
+  "live_pipeline": true,
+  "mocked_pipeline_components": [],
+  "case_count": 8,
+  "trace_persistence": {
+    "decision_trace_rows_expected": 12,
+    "decision_trace_rows_found": 12,
+    "decision_trace_rows_all_present": true,
+    "langfuse_configured": true,
+    "langfuse_trace_status_counts": {
+      "found": 12
+    }
+  },
+  "scores": [
+    {
+      "case_id": "case_01_normal_health",
+      "category": "normal_cases",
+      "trace_ids": [
+        "77fc387b66904820bfe190955f05fd5e"
+      ],
+      "decision_trace_ids": [
+        "02995db7-907b-42e0-989a-96593db581f1"
+      ],
+      "turn_count": 1,
+      "retrieved_fact_count": 4,
+      "intent": "health",
+      "missing_field_count": 0,
+      "report_status": "ready",
+      "delivery_hold": false,
+      "approved": true,
+      "scores": {
+        "context_precision": {
+          "status": "scored",
+          "value": 0.8333
+        },
+        "context_recall": {
+          "status": "scored",
+          "value": 0.5
+        },
+        "faithfulness": {
+          "status": "error",
+          "error_class": "BadRequestError"
+        },
+        "answer_relevancy": {
+          "status": "scored",
+          "value": 0.6633
+        }
+      }
+    },
+    {
+      "case_id": "case_02_edge_entry_age_cap",
+      "category": "edge_cases",
+      "trace_ids": [
+        "6b102df1ff0a4bec85bfa89fe7655dee",
+        "17cb66af5604484d99124649685c0c7f",
+        "073c2aa1e1e248d3aba788a6b8740202"
+      ],
+      "decision_trace_ids": [
+        "b240e2a6-a35b-4a82-8225-5abe46576b86",
+        "a4b5736e-41b4-4aac-a2f1-d23f5087a464",
+        "e1ec37d5-dc7b-43bf-adb0-f0b4b417b5c3"
+      ],
+      "turn_count": 3,
+      "retrieved_fact_count": 2,
+      "intent": "health",
+      "missing_field_count": 0,
+      "report_status": "ready",
+      "delivery_hold": true,
+      "approved": true,
+      "scores": {
+        "context_precision": {
+          "status": "not_applicable",
+          "reason": "no_case_retrieval_reference"
+        },
+        "context_recall": {
+          "status": "not_applicable",
+          "reason": "no_case_retrieval_reference"
+        },
+        "faithfulness": {
+          "status": "error",
+          "error_class": "BadRequestError"
+        },
+        "answer_relevancy": {
+          "status": "scored",
+          "value": 0.6611
+        }
+      }
+    },
+    {
+      "case_id": "case_03_missing_info_loop",
+      "category": "missing_information",
+      "trace_ids": [
+        "7d5de3ab7b374d4d9376057047913299"
+      ],
+      "decision_trace_ids": [
+        "d3575eac-bf48-436f-b550-960a1bc4a62c"
+      ],
+      "turn_count": 1,
+      "retrieved_fact_count": 0,
+      "intent": null,
+      "missing_field_count": 3,
+      "report_status": null,
+      "delivery_hold": true,
+      "approved": false,
+      "scores": {
+        "context_precision": {
+          "status": "not_applicable",
+          "reason": "no_context_retrieved"
+        },
+        "context_recall": {
+          "status": "not_applicable",
+          "reason": "no_context_retrieved"
+        },
+        "faithfulness": {
+          "status": "not_applicable",
+          "reason": "no_context_retrieved"
+        },
+        "answer_relevancy": {
+          "status": "scored",
+          "value": 0.6297
+        }
+      }
+    },
+    {
+      "case_id": "case_04_conflicting_sources",
+      "category": "conflicting_sources",
+      "trace_ids": [
+        "ef42111b5cc34cd3aa178427259b1331"
+      ],
+      "decision_trace_ids": [
+        "085042d6-f618-4f78-ae9f-734e1a26ea93"
+      ],
+      "turn_count": 1,
+      "retrieved_fact_count": 2,
+      "intent": "health",
+      "missing_field_count": 0,
+      "report_status": "ready",
+      "delivery_hold": false,
+      "approved": true,
+      "scores": {
+        "context_precision": {
+          "status": "scored",
+          "value": 0.0
+        },
+        "context_recall": {
+          "status": "scored",
+          "value": 0.0
+        },
+        "faithfulness": {
+          "status": "scored",
+          "value": 0.4
+        },
+        "answer_relevancy": {
+          "status": "scored",
+          "value": 0.7396
+        }
+      }
+    },
+    {
+      "case_id": "case_05_outdated_policy",
+      "category": "outdated_policies",
+      "trace_ids": [
+        "a976caf773d24638acaca0a2b4fcd734"
+      ],
+      "decision_trace_ids": [
+        "d516a3ad-c330-4b42-982d-71d978a06810"
+      ],
+      "turn_count": 1,
+      "retrieved_fact_count": 2,
+      "intent": "health",
+      "missing_field_count": 0,
+      "report_status": "ready",
+      "delivery_hold": false,
+      "approved": true,
+      "scores": {
+        "context_precision": {
+          "status": "not_applicable",
+          "reason": "no_case_retrieval_reference"
+        },
+        "context_recall": {
+          "status": "not_applicable",
+          "reason": "no_case_retrieval_reference"
+        },
+        "faithfulness": {
+          "status": "error",
+          "error_class": "BadRequestError"
+        },
+        "answer_relevancy": {
+          "status": "scored",
+          "value": 0.6714
+        }
+      }
+    },
+    {
+      "case_id": "case_06_malicious_injection",
+      "category": "malicious_documents",
+      "trace_ids": [
+        "50105252e35d467d8e3c80f2a1c4e89b",
+        "873a118777c44b858655e7faf304053e"
+      ],
+      "decision_trace_ids": [
+        "061eaebd-4008-4880-9319-299e4e88177c",
+        "3a38f1b7-9816-4843-b9f4-95a250b84c52"
+      ],
+      "turn_count": 2,
+      "retrieved_fact_count": 2,
+      "intent": "health",
+      "missing_field_count": 0,
+      "report_status": "ready",
+      "delivery_hold": false,
+      "approved": true,
+      "scores": {
+        "context_precision": {
+          "status": "not_applicable",
+          "reason": "no_case_retrieval_reference"
+        },
+        "context_recall": {
+          "status": "not_applicable",
+          "reason": "no_case_retrieval_reference"
+        },
+        "faithfulness": {
+          "status": "error",
+          "error_class": "BadRequestError"
+        },
+        "answer_relevancy": {
+          "status": "scored",
+          "value": 0.5544
+        }
+      }
+    },
+    {
+      "case_id": "case_07_ambiguous_intent",
+      "category": "ambiguous_questions",
+      "trace_ids": [
+        "5f289ce7dc084084bcc450db94420896"
+      ],
+      "decision_trace_ids": [
+        "1b8c3696-daa4-4953-b933-10eea286e592"
+      ],
+      "turn_count": 1,
+      "retrieved_fact_count": 0,
+      "intent": null,
+      "missing_field_count": 4,
+      "report_status": null,
+      "delivery_hold": true,
+      "approved": false,
+      "scores": {
+        "context_precision": {
+          "status": "not_applicable",
+          "reason": "no_context_retrieved"
+        },
+        "context_recall": {
+          "status": "not_applicable",
+          "reason": "no_context_retrieved"
+        },
+        "faithfulness": {
+          "status": "not_applicable",
+          "reason": "no_context_retrieved"
+        },
+        "answer_relevancy": {
+          "status": "scored",
+          "value": 0.5964
+        }
+      }
+    },
+    {
+      "case_id": "case_08_provenance_diabetes_comparison",
+      "category": "full_provenance",
+      "trace_ids": [
+        "58e9c239b94a49ee8fb481e4289f95ab",
+        "09bb10033d2545729913a0ad5cb505de"
+      ],
+      "decision_trace_ids": [
+        "09e6c751-1693-47c9-90f4-0232331f3f8e",
+        "86a94ea0-4dc2-46fe-808e-e4db0c1de0bd"
+      ],
+      "turn_count": 2,
+      "retrieved_fact_count": 4,
+      "intent": "health",
+      "missing_field_count": 0,
+      "report_status": "ready",
+      "delivery_hold": true,
+      "approved": true,
+      "scores": {
+        "context_precision": {
+          "status": "error",
+          "error_class": "RateLimitError"
+        },
+        "context_recall": {
+          "status": "error",
+          "error_class": "RateLimitError"
+        },
+        "faithfulness": {
+          "status": "error",
+          "error_class": "RateLimitError"
+        },
+        "answer_relevancy": {
+          "status": "error",
+          "error_class": "RateLimitError"
+        }
+      }
+    }
+  ],
+  "notes": [
+    "RAGAS judge inputs are omitted; the artifact retains scores, IDs, and counts.",
+    "Seeded corpus/reference text is a project test fixture, not independently verified insurance wording.",
+    "N/A means a metric does not apply to an early-return or non-RAG case; it is not a zero score."
+  ]
+}

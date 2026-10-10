@@ -1,0 +1,90 @@
+{
+  "timestamp": "2026-10-09T12:48:46.723559+00:00",
+  "run_status": "aborted_invalid_generation_target",
+  "runner": "RAGAS collections API",
+  "live_pipeline": true,
+  "mocked_pipeline_components": [],
+  "runtime_env_only": true,
+  "dotenv_accessed": false,
+  "evidence_input_version": 2,
+  "after_pipeline_delay_seconds": 75,
+  "between_cases_delay_seconds": 180,
+  "metric_providers": {
+    "context_precision": "groq",
+    "context_recall": "groq",
+    "answer_relevancy": "groq",
+    "faithfulness": "openrouter"
+  },
+  "faithfulness_model": "nvidia/nemotron-3-super-120b-a12b:free",
+  "scores": [
+    {
+      "case_id": "case_08_provenance_diabetes_comparison",
+      "retrieved_fact_count": 4,
+      "intent": "health",
+      "missing_field_count": 0,
+      "report_status": null,
+      "delivery_hold": true,
+      "approved": true,
+      "generation_evidence_count": 16,
+      "trace_ids": [
+        "19f1c0051b5c4d8da280a20f1644e385",
+        "ab0df4b096a545eca58b2a9865742cba"
+      ],
+      "decision_trace_ids": [
+        "a4343a7a-2bf6-4bd9-bfa8-898bd1bdb4c6",
+        "e8fd8f04-7e90-41d8-bbc2-c1265d2bc847"
+      ],
+      "turn_count": 2,
+      "scores": {
+        "context_precision": {
+          "status": "scored",
+          "value": 0.3333
+        },
+        "context_recall": {
+          "status": "scored",
+          "value": 0.25
+        },
+        "faithfulness": {
+          "status": "invalid_measurement",
+          "invalid_observed_value": 0.0,
+          "reason": "delivery_status_reply_is_not_generated_report"
+        },
+        "answer_relevancy": {
+          "status": "invalid_measurement",
+          "invalid_observed_value": 0.4701,
+          "reason": "delivery_status_reply_is_not_generated_report"
+        }
+      }
+    }
+  ],
+  "provider_diagnostics": [],
+  "openrouter_cost_usd": 0.0,
+  "openrouter_responses_with_cost": 2,
+  "evaluator_model": "openai/gpt-oss-20b",
+  "evaluator_provider": "groq",
+  "faithfulness_provider": "openrouter",
+  "embedding_model": "gemini-embedding-2-preview",
+  "faithfulness_context": "complete_sourced_explanation_evidence",
+  "case_count": 1,
+  "reason": "Case 08 explanation_report failed JSON parsing; generation metrics incorrectly scored the API delivery-hold reply. Case 01 also failed JSON parsing before scoring. These are pipeline-generation failures, not judge quota failures.",
+  "pipeline_failures": [
+    {
+      "case_id": "case_08_provenance_diabetes_comparison",
+      "node": "explanation-report",
+      "exception_class": "ExplanationReportError",
+      "cause_class": "JSONDecodeError",
+      "error_ref": "c76742f59e434e0087cfef9e7d8dafe5",
+      "trace_id": "ab0df4b096a545eca58b2a9865742cba",
+      "decision_trace_id": "e8fd8f04-7e90-41d8-bbc2-c1265d2bc847"
+    },
+    {
+      "case_id": "case_01_normal_health",
+      "node": "explanation-report",
+      "exception_class": "ExplanationReportError",
+      "cause_class": "JSONDecodeError",
+      "error_ref": "1d1652111cae4c008eb21949e39989e4",
+      "trace_id": "c6174d57db3d4d4e9d6c170b3346bede",
+      "decision_trace_id": "e109148d-799e-4f6d-88a8-4ad3b8797392"
+    }
+  ]
+}

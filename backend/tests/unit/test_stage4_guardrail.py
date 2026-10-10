@@ -126,7 +126,8 @@ def _make_clean_hidden_clauses() -> list[dict[str, Any]]:
 def _make_empty_db_session() -> MagicMock:
     """Mock DB session preventing asyncpg calls during integration tests."""
     mock_result = MagicMock()
-    mock_result.all.return_value = []
+    empty_records: list[Any] = []
+    mock_result.all.return_value = empty_records
     mock_session = AsyncMock()
     mock_session.execute = AsyncMock(return_value=mock_result)
     mock_session.__aenter__ = AsyncMock(return_value=mock_session)
@@ -476,7 +477,8 @@ class TestGuardrailGraphIntegration:
                         content=(
                             '{"sentences":[{"text":"Sourced policy details are available.",'
                             '"evidence_ids":["E1"]}]}'
-                        )
+                        ),
+                        finish_reason="stop",
                     )
                 ),
             ),
@@ -546,7 +548,8 @@ class TestGuardrailGraphIntegration:
                         content=(
                             '{"sentences":[{"text":"Sourced policy details are available.",'
                             '"evidence_ids":["E1"]}]}'
-                        )
+                        ),
+                        finish_reason="stop",
                     )
                 ),
             ),
