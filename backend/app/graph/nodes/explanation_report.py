@@ -147,6 +147,7 @@ async def explanation_report_node(state: SessionState) -> dict[str, Any]:
     if language not in _SUPPORTED_LANGUAGES:
         language = "en"
 
+    sentences: list[dict[str, Any]] = []
     if evidence:
         evidence_json = json.dumps(evidence, ensure_ascii=False, separators=(",", ":"))
         guardrail_notes = state.get("guardrail_notes", [])

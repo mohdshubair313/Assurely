@@ -16,6 +16,10 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/
+.hypothesis/
+.tox/
+.nox/
+.ipynb_checkpoints/
 .coverage*
 htmlcov/
 
@@ -27,15 +31,29 @@ dist/
 build/
 coverage/
 *.tsbuildinfo
+playwright-report/
+test-results/
+blob-report/
 
 # Local runtime and capture tooling
 .local/
+.cache/
+.vscode/
+.idea/
+artifacts/
 *.log
 exception-logs/
 quarantine/
 *.pid
 .DS_Store
 Thumbs.db
+Desktop.ini
+*.sqlite
+*.sqlite3
+*.db
+
+# Empty file produced by a malformed local pip command
+/backend/=0.4.0,
 
 # Raw ingestion documents and policy PDFs (never commit to public repo)
 data/

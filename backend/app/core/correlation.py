@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
@@ -42,7 +42,7 @@ current_node: ContextVar[str] = ContextVar("node_correlation", default="api")
 
 
 @contextmanager
-def correlation_scope(session_id: str | None = None) -> Iterator[TurnCorrelation]:
+def correlation_scope(session_id: str | None = None) -> Generator[TurnCorrelation]:
     turn = TurnCorrelation(
         session_id=str(database_session_id(session_id)) if session_id else None
     )
@@ -54,7 +54,7 @@ def correlation_scope(session_id: str | None = None) -> Iterator[TurnCorrelation
 
 
 @contextmanager
-def node_scope(name: str) -> Iterator[None]:
+def node_scope(name: str) -> Generator[None]:
     token = current_node.set(name)
     try:
         yield

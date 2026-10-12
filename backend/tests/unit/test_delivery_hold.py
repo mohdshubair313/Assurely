@@ -89,7 +89,7 @@ def test_intake_question_can_be_returned_without_held_content() -> None:
 
 
 def test_api_checks_hold_on_actual_response_path() -> None:
-    state = {
+    state: dict[str, Any] = {
         **completed_state(),
         "delivery_hold": True,
         "advisor_notification": {"status": "queued"},

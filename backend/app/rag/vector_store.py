@@ -13,12 +13,42 @@ Features:
 from __future__ import annotations
 
 import logging
+import re
+from collections.abc import Iterable
 from datetime import UTC, datetime
 from typing import Any
 
 from app.core.config import get_settings
 
 logger = logging.getLogger(__name__)
+
+
+def _matching_products(query: str, metadatas: Iterable[dict[str, Any] | None]) -> list[str]:
+    """Resolve complete indexed product names with word boundaries, without an LLM."""
+    normalized_query = " ".join(re.findall(r"\w+", query.casefold()))
+    matches: set[tuple[int, int, str]] = set()
+    for metadata in metadatas:
+        name = metadata.get("product_name") if isinstance(metadata, dict) else None
+        if not isinstance(name, str) or not name.strip():
+            continue
+        normalized_name = " ".join(re.findall(r"\w+", name.casefold()))
+        if normalized_name:
+            for match in re.finditer(
+                rf"(?<!\w){re.escape(normalized_name)}(?!\w)", normalized_query
+            ):
+                matches.add((match.start(), match.end(), name))
+    # A longer product name does not implicitly request its shorter-name sibling.
+    return sorted(
+        {
+            name
+            for start, end, name in matches
+            if not any(
+                other_start <= start and end <= other_end and other_end - other_start > end - start
+                for other_start, other_end, _ in matches
+            )
+        }
+    )
+
 
 # Standard seeded clauses from verified insurer filings
 DEFAULT_SEEDED_CLAUSES: list[dict[str, Any]] = [
@@ -132,10 +162,21 @@ class PolicyVectorStore:
                 host=self.settings.chroma_host,
                 port=self.settings.chroma_port,
             )
-            self._collection = self._client.get_or_create_collection(
-                name="policy_clauses",
-                metadata={"hnsw:space": "cosine"},
+            # Open an existing collection without resubmitting creation metadata.
+            # The deployed 0.6 service rejects that get-or-create request with
+            # KeyError('_type'), even though ordinary collection reads work.
+            missing_collection_errors = tuple(
+                getattr(chromadb.errors, name)
+                for name in ("InvalidCollectionException", "NotFoundError")
+                if hasattr(chromadb.errors, name)
             )
+            try:
+                self._collection = self._client.get_collection(name="policy_clauses")
+            except missing_collection_errors:
+                self._collection = self._client.create_collection(
+                    name="policy_clauses",
+                    metadata={"hnsw:space": "cosine"},
+                )
             # Seed default clauses if empty
             if self._collection.count() == 0:
                 self._seed_default_clauses()
@@ -211,9 +252,9 @@ class PolicyVectorStore:
         from app.rag.ingestion_screening import ScreeningOutcome, compute_sha256
 
         # Validate each document against its screening result
-        for index, (doc, meta, doc_id, screen) in enumerate(zip(
-            documents, metadatas, ids, screening_results, strict=True
-        )):
+        for index, (doc, meta, doc_id, screen) in enumerate(
+            zip(documents, metadatas, ids, screening_results, strict=True)
+        ):
             if screen is None:
                 raise PermissionError(
                     f"Unscreened document rejected: document '{doc_id}' lacks a screening result."
@@ -270,19 +311,42 @@ class PolicyVectorStore:
                 }
             )
 
-    def similarity_search(self, query: str, top_k: int = 3) -> list[dict[str, Any]]:
+    def similarity_search(
+        self, query: str, top_k: int = 3, *, scope_query: str | None = None
+    ) -> list[dict[str, Any]]:
         """Search policy clauses relevant to the user's query or profile."""
         results: list[dict[str, Any]] = []
+        scope_text = scope_query if scope_query is not None else query
+        named_products = _matching_products(scope_text, self._fallback_docs)
 
         if self._collection is not None:
             try:
+                catalog = self._collection.get(include=["metadatas"])
+                named_products = sorted(
+                    set(named_products)
+                    | set(_matching_products(scope_text, catalog.get("metadatas") or []))
+                )
+            except Exception:
+                # A failed scope lookup must not silently search every insurer.
+                logger.warning("Policy scope metadata lookup failed", exc_info=True)
+                return []
+            try:
+                query_options: dict[str, Any] = {}
+                if named_products:
+                    query_options["where"] = {"product_name": {"$in": named_products}}
+                count = self._collection.count()
+                if count == 0:
+                    return []
                 query_res = self._collection.query(
                     query_texts=[query],
-                    n_results=min(top_k, self._collection.count()),
+                    n_results=min(top_k, count),
+                    **query_options,
                 )
                 docs = query_res.get("documents", [[]])[0]
                 metas = query_res.get("metadatas", [[]])[0]
                 for doc, meta in zip(docs, metas, strict=True):
+                    if named_products and meta.get("product_name") not in named_products:
+                        continue
                     results.append(
                         {
                             "claim": doc,
@@ -294,7 +358,7 @@ class PolicyVectorStore:
                             "indexed_content_hash": meta.get("indexed_content_hash", ""),
                         }
                     )
-                if results:
+                if results or named_products:
                     return results
             except Exception as e:
                 logger.warning(
@@ -305,14 +369,14 @@ class PolicyVectorStore:
         q_tokens = [w.lower() for w in query.split() if len(w) > 3]
         scored_docs: list[tuple[int, dict[str, Any]]] = []
         for doc in self._fallback_docs:
+            if named_products and doc.get("product_name") not in named_products:
+                continue
             content_lower = doc["content"].lower() + " " + doc["section"].lower()
             score = sum(1 for token in q_tokens if token in content_lower)
             scored_docs.append((score, doc))
 
         scored_docs.sort(key=lambda x: x[0], reverse=True)
         selected = [doc for _, doc in scored_docs[:top_k]]
-        if not selected:
-            selected = self._fallback_docs[:top_k]
 
         for item in selected:
             results.append(

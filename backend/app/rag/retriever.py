@@ -24,14 +24,19 @@ from app.rag.vector_store import get_vector_store
 logger = logging.getLogger(__name__)
 
 
-def retrieve_health_facts(query: str, top_k: int = 3) -> list[dict[str, Any]]:
+def retrieve_health_facts(
+    query: str, top_k: int = 3, *, scope_query: str | None = None
+) -> list[dict[str, Any]]:
     """Retrieve verified policy clause facts relevant to the health insurance query.
 
     All facts are guaranteed to carry source, url, retrieved_at, and last_verified
     per AGENTS.md rule 6.
     """
     vector_store = get_vector_store()
-    facts = vector_store.similarity_search(query=query, top_k=top_k)
+    if scope_query is None:
+        facts = vector_store.similarity_search(query=query, top_k=top_k)
+    else:
+        facts = vector_store.similarity_search(query=query, top_k=top_k, scope_query=scope_query)
 
     # Sanitize / ensure compliance with AGENTS.md rule 6
     sanitized: list[dict[str, Any]] = []

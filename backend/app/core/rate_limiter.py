@@ -28,7 +28,7 @@ class RateLimitExceededError(Exception):
 
     def __init__(
         self, message: str, retry_after_seconds: int = 60, reason: str = "rate_limit_exceeded"
-    ):
+    ) -> None:
         super().__init__(message)
         self.retry_after_seconds = retry_after_seconds
         self.reason = reason
@@ -223,13 +223,14 @@ def rate_limited(func: Callable[P, Awaitable[R]]) -> Callable[P, Awaitable[R]]:
 
         result = await func(*args, **kwargs)
 
+        total_tokens = getattr(result, "total_tokens", None)
         if (
             isinstance(session_id, str)
             and session_id
-            and hasattr(result, "total_tokens")
-            and result.total_tokens
+            and isinstance(total_tokens, int)
+            and total_tokens > 0
         ):
-            await limiter.record_tokens(session_id, result.total_tokens)
+            await limiter.record_tokens(session_id, total_tokens)
 
         return result
 

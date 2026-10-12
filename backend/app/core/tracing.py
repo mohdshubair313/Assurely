@@ -10,15 +10,18 @@ from __future__ import annotations
 
 import hashlib
 import logging
-from collections.abc import Awaitable, Callable, Iterator
+from collections.abc import Awaitable, Callable, Generator
 from contextlib import contextmanager, nullcontext
 from contextvars import ContextVar, Token
 from functools import lru_cache, wraps
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
 from app.core.config import get_settings
 from app.core.correlation import correlation_scope, current_turn, node_scope
 from app.graph.state import SessionState
+
+if TYPE_CHECKING:
+    import langfuse  # type: ignore[import-not-found]  # noqa: F401
 
 logger = logging.getLogger(__name__)
 
@@ -66,7 +69,7 @@ def _get_client() -> Any | None:
     if not settings.langfuse_public_key or not settings.langfuse_secret_key:
         return None
     try:
-        from langfuse import get_client
+        from langfuse import get_client  # type: ignore[import-not-found]
 
         return get_client()
     except Exception as exc:  # tracing must never break advisory requests
@@ -84,7 +87,7 @@ def observation(
     model: str | None = None,
     model_parameters: dict[str, Any] | None = None,
     trace_context: dict[str, str] | None = None,
-) -> Iterator[Observation | None]:
+) -> Generator[Observation | None]:
     """Create a nested observation when this request has an active trace."""
     if not _active_trace.get():
         yield None
@@ -119,7 +122,7 @@ def observation(
 
 
 @contextmanager
-def request_trace(session_id: str, *, message_char_count: int) -> Iterator[Observation | None]:
+def request_trace(session_id: str, *, message_char_count: int) -> Generator[Observation | None]:
     """Start one trace per web-chat turn and group turns by app session ID."""
     context = current_turn.get()
     scope = nullcontext(context) if context else correlation_scope(session_id)
@@ -132,7 +135,7 @@ def request_trace(session_id: str, *, message_char_count: int) -> Iterator[Obser
 @contextmanager
 def _request_trace(
     identifiers: dict[str, str | None], *, message_char_count: int
-) -> Iterator[Observation | None]:
+) -> Generator[Observation | None]:
     settings = get_settings()
     client = _get_client()
     model_token = _turn_llm_metadata.set({"models": [], "prompts": []})
@@ -143,7 +146,7 @@ def _request_trace(
             _turn_llm_metadata.reset(model_token)
         return
 
-    from langfuse import propagate_attributes
+    from langfuse import propagate_attributes  # type: ignore[import-not-found]
 
     token: Token[bool] = _active_trace.set(True)
     try:
@@ -181,8 +184,9 @@ def trace_node(
     @wraps(node)
     async def traced(state: SessionState) -> dict[str, Any]:
         turn = current_turn.get()
-        if turn is not None and isinstance(state.get("user_profile"), dict):
-            turn.profile_snapshot = state["user_profile"]
+        user_profile = state.get("user_profile")
+        if turn is not None and isinstance(user_profile, dict):
+            turn.profile_snapshot = user_profile
         with node_scope(name), observation(
             name,
             as_type="span",
@@ -215,9 +219,9 @@ def trace_node(
                     if isinstance(sentences, list):
                         safe_result["report_sentence_count"] = len(sentences)
                 span.update(output=safe_result)
-                turn = current_turn.get()
-                error_refs = [ref for _, ref, node_name in turn.errors if node_name == name] \
-                    if turn else []
+                error_refs: list[str] = [
+                    ref for _, ref, node_name in turn.errors if node_name == name
+                ] if turn else []
                 if error_refs:
                     span.update(
                         level="ERROR", status_message="Exception content redacted",

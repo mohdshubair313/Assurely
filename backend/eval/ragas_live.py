@@ -1,4 +1,4 @@
-﻿"""Run RAGAS metrics against live pipeline traces for the existing eval cases.
+"""Run RAGAS metrics against live pipeline traces for the existing eval cases.
 
 Usage inside a configured backend environment::
 
@@ -21,12 +21,15 @@ import types
 import uuid
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
+
+from langchain_core.runnables import RunnableConfig
 
 from app.api.v1.message import MessageRequest, _app_graph, send_message
 from app.core.config import get_settings
 from app.core.correlation import correlation_scope
 from app.graph.nodes.explanation_report import _evidence_catalog
+from app.graph.state import SessionState
 from app.main import app
 
 logger = logging.getLogger("ragas_live")
@@ -55,8 +58,8 @@ EARLY_RETURN_CASES = {"case_03_missing_info_loop", "case_07_ambiguous_intent"}
 SPECIAL_MESSAGES = {
     "case_04_conflicting_sources": (
         "I am 40 years old, live in Bengaluru, and need cover for myself only with no "
-          "pre-existing conditions. I am asking about health insurance. For HDFC ERGO "
-          "Optima Secure, an aggregator says the "
+        "pre-existing conditions. I am asking about health insurance. For HDFC ERGO "
+        "Optima Secure, an aggregator says the "
         "pre-existing disease waiting period is 24 months, while the insurer wording says "
         "36 months. What does the policy wording say?"
     ),
@@ -114,7 +117,7 @@ def install_ragas_langchain_compatibility() -> None:
         sys.modules[community_vertex_module] = module
 
     try:
-        import langchain_community.llms as community_llms
+        import langchain_community.llms as community_llms  # type: ignore[import-not-found]  # pyright: ignore[reportMissingImports]
     except ImportError:
         community_llms = None
     if community_llms is not None and not hasattr(community_llms, "VertexAI"):
@@ -123,8 +126,7 @@ def install_ragas_langchain_compatibility() -> None:
 
 def load_cases() -> list[dict[str, Any]]:
     cases = [
-        json.loads(path.read_text(encoding="utf-8"))
-        for path in sorted(CASE_DIR.glob("*.json"))
+        json.loads(path.read_text(encoding="utf-8")) for path in sorted(CASE_DIR.glob("*.json"))
     ]
     if len(cases) < 8:
         raise RuntimeError(f"Expected at least 8 existing eval cases; found {len(cases)}")
@@ -151,8 +153,7 @@ def generation_contexts(state: Any) -> list[str]:
     """
     return list(
         dict.fromkeys(
-            f"{fact['claim']} [Source: {fact['source']}; "
-            f"last verified: {fact['last_verified']}]"
+            f"{fact['claim']} [Source: {fact['source']}; last verified: {fact['last_verified']}]"
             for fact in _evidence_catalog(state)
         )
     )
@@ -161,7 +162,7 @@ def generation_contexts(state: Any) -> list[str]:
 async def run_pipeline_case(case: dict[str, Any]) -> dict[str, Any]:
     case_id = case["id"]
     session_id = f"ragas-{uuid.uuid4()}"
-    config = {"configurable": {"thread_id": session_id}}
+    config: RunnableConfig = {"configurable": {"thread_id": session_id}}
     pending_message = adapted_message(case)
     final_response: Any = None
     turn_ids: list[dict[str, str]] = []
@@ -181,13 +182,13 @@ async def run_pipeline_case(case: dict[str, Any]) -> dict[str, Any]:
             )
 
         checkpoint = await _app_graph.aget_state(config)
-        state = checkpoint.values if checkpoint and checkpoint.values else {}
+        state = (
+            cast(SessionState, checkpoint.values)
+            if checkpoint and checkpoint.values
+            else SessionState()
+        )
         missing_fields = state.get("missing_fields", [])
-        if (
-            case_id in EARLY_RETURN_CASES
-            or not missing_fields
-            or followup_count >= 4
-        ):
+        if case_id in EARLY_RETURN_CASES or not missing_fields or followup_count >= 4:
             break
 
         followup_fields = [field for field in missing_fields if field in INTAKE_FOLLOWUP]
@@ -196,7 +197,11 @@ async def run_pipeline_case(case: dict[str, Any]) -> dict[str, Any]:
         pending_message = " ".join(INTAKE_FOLLOWUP[field] for field in followup_fields)
         followup_count += 1
 
-    state = checkpoint.values if checkpoint and checkpoint.values else {}
+    state = (
+        cast(SessionState, checkpoint.values)
+        if checkpoint and checkpoint.values
+        else SessionState()
+    )
     output = state.get("output") or {}
     try:
         answer = evaluation_answer(
@@ -231,9 +236,7 @@ async def run_pipeline_case(case: dict[str, Any]) -> dict[str, Any]:
         "generation_contexts": generation_contexts(state),
         # Kept transiently for side-by-side inspection; never written to the
         # content-free result artifact.
-        "retrieved_chunks": [
-            fact for fact in retrieved_facts if isinstance(fact, dict)
-        ],
+        "retrieved_chunks": [fact for fact in retrieved_facts if isinstance(fact, dict)],
         "retrieved_fact_count": len(contexts),
         "intent": state.get("intent"),
         "missing_field_count": len(state.get("missing_fields") or []),
@@ -253,10 +256,16 @@ async def create_metrics(
         raise ValueError("Free-tier evaluation requires a pinned OpenRouter :free model")
     install_ragas_langchain_compatibility()
     try:
-        from openai import AsyncOpenAI
-        from ragas.embeddings.base import embedding_factory
-        from ragas.llms import llm_factory
-        from ragas.metrics.collections import (
+        from openai import (  # type: ignore[import-not-found]  # pyright: ignore[reportMissingImports]
+            AsyncOpenAI,
+        )
+        from ragas.embeddings.base import (  # type: ignore[import-not-found]  # pyright: ignore[reportMissingImports]
+            embedding_factory,
+        )
+        from ragas.llms import (  # type: ignore[import-not-found]  # pyright: ignore[reportMissingImports]
+            llm_factory,
+        )
+        from ragas.metrics.collections import (  # type: ignore[import-not-found]  # pyright: ignore[reportMissingImports]
             AnswerRelevancy,
             ContextPrecision,
             ContextRecall,
@@ -411,10 +420,7 @@ async def score_case(
         if selected_metrics is not None and name not in selected_metrics:
             scores[name] = {"status": "not_requested"}
             continue
-        if (
-            name in {"context_precision", "context_recall"}
-            and not sample["contexts"]
-        ):
+        if name in {"context_precision", "context_recall"} and not sample["contexts"]:
             scores[name] = {"status": "not_applicable", "reason": "no_context_retrieved"}
             continue
         if name == "faithfulness" and not generation_evidence:
@@ -427,6 +433,7 @@ async def score_case(
             if metric_delay_seconds:
                 await asyncio.sleep(metric_delay_seconds)
             backoff = (90, 180, 300, 300) if name == "faithfulness" else (75, 150, 240)
+            result: Any = None
             for attempt in range(len(backoff) + 1):
                 try:
                     if name in {"context_precision", "context_recall"}:
@@ -488,14 +495,10 @@ async def verify_trace_persistence(results: list[dict[str, Any]]) -> dict[str, A
     from app.models.db.decision_trace import DecisionTrace
 
     decision_ids = {
-        uuid.UUID(trace_id)
-        for result in results
-        for trace_id in result["decision_trace_ids"]
+        uuid.UUID(trace_id) for result in results for trace_id in result["decision_trace_ids"]
     }
     async with AsyncSessionLocal() as db:
-        rows = await db.execute(
-            select(DecisionTrace.id).where(DecisionTrace.id.in_(decision_ids))
-        )
+        rows = await db.execute(select(DecisionTrace.id).where(DecisionTrace.id.in_(decision_ids)))
         persisted_decision_ids = {row[0] for row in rows.all()}
 
     settings = get_settings()
@@ -522,8 +525,7 @@ async def verify_trace_persistence(results: list[dict[str, Any]]) -> dict[str, A
                         },
                     )
                     has_observation = response.status_code == 200 and any(
-                        item.get("traceId") == trace_id
-                        for item in response.json().get("data", [])
+                        item.get("traceId") == trace_id for item in response.json().get("data", [])
                     )
                     status = (
                         "found"
@@ -589,9 +591,7 @@ async def run(
                     "case_id": sample["case_id"],
                     "category": case.get("category"),
                     "trace_ids": [turn["trace_id"] for turn in sample["turns"]],
-                    "decision_trace_ids": [
-                        turn["decision_trace_id"] for turn in sample["turns"]
-                    ],
+                    "decision_trace_ids": [turn["decision_trace_id"] for turn in sample["turns"]],
                     "turn_count": len(sample["turns"]),
                     "retrieved_fact_count": sample["retrieved_fact_count"],
                     "generation_evidence_count": len(sample["generation_contexts"]),
@@ -613,7 +613,7 @@ async def run(
 
     persistence = await verify_trace_persistence(results)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    artifact = {
+    artifact: dict[str, Any] = {
         "timestamp": datetime.now(UTC).isoformat(),
         "runner": "RAGAS collections API",
         "evaluator_model": metric_bundle["evaluator_model"],
@@ -635,9 +635,7 @@ async def run(
         "trace_persistence": persistence,
         "scores": results,
         "notes": [
-            (
-                "RAGAS judge inputs are omitted; the artifact retains scores, IDs, and counts."
-            ),
+            ("RAGAS judge inputs are omitted; the artifact retains scores, IDs, and counts."),
             (
                 "Seeded corpus/reference text is a project test fixture, not independently "
                 "verified insurance wording."
@@ -654,21 +652,17 @@ async def run(
     }
     output_path.write_text(json.dumps(artifact, indent=2), encoding="utf-8")
     all_scores_resolved = all(
-        entry["scores"][name]["status"]
-        in {"scored", "not_applicable", "not_requested"}
+        entry["scores"][name]["status"] in {"scored", "not_applicable", "not_requested"}
         for entry in results
         for name in METRIC_NAMES
     )
     langfuse_ids_expected = sum(len(result["trace_ids"]) for result in results)
     langfuse_ok = not persistence["langfuse_configured"] or (
-        persistence["langfuse_trace_status_counts"].get("found", 0)
-        == langfuse_ids_expected
+        persistence["langfuse_trace_status_counts"].get("found", 0) == langfuse_ids_expected
     )
     return (
         0
-        if all_scores_resolved
-        and persistence["decision_trace_rows_all_present"]
-        and langfuse_ok
+        if all_scores_resolved and persistence["decision_trace_rows_all_present"] and langfuse_ok
         else 2
     )
 
@@ -729,4 +723,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

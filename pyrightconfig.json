@@ -1,0 +1,6 @@
+{
+  "include": ["backend/app", "backend/eval"],
+  "venvPath": "backend",
+  "venv": "venv",
+  "extraPaths": ["backend"]
+}

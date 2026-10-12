@@ -90,7 +90,6 @@ async def run_preflight() -> dict[str, Any]:
         database = Path(temp) / "local-test-queue.sqlite3"
         with local_receiver(database) as (url, requests):
             settings = Settings(
-                _env_file=None,
                 environment="development",
                 advisor_webhook_url=url,
                 advisor_webhook_retry_delay_seconds=0,
@@ -112,7 +111,7 @@ async def run_preflight() -> dict[str, Any]:
                 }
                 await escalate_node(receipt_state)
                 assert len(requests) == before_receipt_replay
-            response = build_message_response(state["session_id"], {**state, **result})
+            response = build_message_response(state.get("session_id", ""), {**state, **result})
             assert response.delivery_hold and response.output == {}
             assert response.calculator_outputs == {} and response.draft_output == {}
             assert response.citations == []

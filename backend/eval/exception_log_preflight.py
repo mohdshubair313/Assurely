@@ -52,11 +52,17 @@ async def query_decision(session_id: str) -> dict[str, Any]:
             ))).scalar_one()
             profile = json.dumps(row.user_profile_snapshot_json)
             assert all(value in profile for value in FAKE_VALUES), "Synthetic profile not retained"
+            rules_output = row.rules_engine_output_json or {}
+            clauses = row.clauses_retrieved_json or []
+            correlation = (
+                rules_output.get("correlation") if isinstance(rules_output, dict) else None
+            )
             return {
-                "id": str(row.id), "session_id": str(row.session_id),
-                "correlation": row.rules_engine_output_json["correlation"],
+                "id": str(row.id),
+                "session_id": str(row.session_id),
+                "correlation": correlation,
                 "synthetic_profile_values_present": True,
-                "clauses_count": len(row.clauses_retrieved_json),
+                "clauses_count": len(clauses),
             }
     finally:
         await async_engine.dispose()

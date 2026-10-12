@@ -40,7 +40,7 @@ logger = logging.getLogger(__name__)
 class AllProvidersFailedError(Exception):
     """Raised when all LLM providers in the fallback chain fail."""
 
-    def __init__(self, message: str, errors: list[dict[str, Any]]):
+    def __init__(self, message: str, errors: list[dict[str, Any]]) -> None:
         super().__init__(message)
         self.errors = errors
 

@@ -27,7 +27,7 @@ async def get_redis_client() -> Any | None:
     """Return a singleton async Redis client instance, or None if unavailable."""
     global _redis_client
     if _redis_client is not None:
-        return _redis_client
+        return _redis_client  # type: ignore[return-value]
 
     settings = get_settings()
     try:

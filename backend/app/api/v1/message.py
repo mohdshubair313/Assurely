@@ -159,7 +159,8 @@ async def send_message(
                 raise HTTPException(status_code=401, detail="A verified bearer token is required.")
             require_matching_user_id(authenticated_user_id, req.user_id)
         user_id = authenticated_user_id
-        consent = {"granted": False, "scopes": []}
+        scopes: list[str] = []
+        consent: dict[str, Any] = {"granted": False, "scopes": scopes}
         saved_profile: dict[str, Any] = {}
         if user_id is not None:
             async with AsyncSessionLocal() as db:

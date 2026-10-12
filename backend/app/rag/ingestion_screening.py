@@ -46,6 +46,19 @@ from app.core.exception_log import safe_exception
 
 logger = logging.getLogger(__name__)
 
+
+def _geteuid() -> int:
+    """Return the effective UID, or 0 on non-POSIX (guarded by the POSIX check)."""
+    fn = getattr(os, "geteuid", None)
+    return fn() if fn is not None else 0
+
+
+def _fchmod(fd: int, mode: int) -> None:
+    """Call os.fchmod where available; no-op on platforms that lack it."""
+    _fchmod_fn = getattr(os, "fchmod", None)
+    if _fchmod_fn is not None:
+        _fchmod_fn(fd, mode)
+
 # Maximum file sizes
 MAX_PDF_SIZE_BYTES = 20 * 1024 * 1024  # 20 MB
 MAX_TEXT_SIZE_BYTES = 2 * 1024 * 1024  # 2 MB
@@ -477,7 +490,7 @@ class QuarantineStore:
         self.log_path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
         parent = self.log_path.parent
         parent_info = parent.stat()
-        if parent_info.st_uid != os.geteuid() or not stat.S_ISDIR(parent_info.st_mode):
+        if parent_info.st_uid != _geteuid() or not stat.S_ISDIR(parent_info.st_mode):
             raise RuntimeError("Quarantine directory must belong to the service account")
         parent.chmod(0o700)
         flags = os.O_CREAT | os.O_WRONLY | os.O_APPEND | getattr(os, "O_NOFOLLOW", 0)
@@ -486,13 +499,13 @@ class QuarantineStore:
             info = os.fstat(fd)
             if (
                 not stat.S_ISREG(info.st_mode)
-                or info.st_uid != os.geteuid()
+                or info.st_uid != _geteuid()
                 or info.st_nlink != 1
             ):
                 raise RuntimeError(
                     "Quarantine file must be a regular file owned by the service account"
                 )
-            os.fchmod(fd, 0o600)
+            _fchmod(fd, 0o600)
         finally:
             os.close(fd)
 
@@ -563,11 +576,11 @@ class QuarantineStore:
                 info = os.fstat(fd)
                 if (
                     not stat.S_ISREG(info.st_mode)
-                    or info.st_uid != os.geteuid()
+                    or info.st_uid != _geteuid()
                     or info.st_nlink != 1
                 ):
                     raise RuntimeError("Unsafe quarantine record file")
-                os.fchmod(fd, 0o600)
+                _fchmod(fd, 0o600)
                 payload = (
                     json.dumps(record.model_dump(), ensure_ascii=False) + "\n"
                 ).encode("utf-8")

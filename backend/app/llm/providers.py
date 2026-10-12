@@ -33,7 +33,7 @@ class ProviderError(Exception):
         message: str,
         status_code: int | None = None,
         is_rate_limit: bool = False,
-    ):
+    ) -> None:
         super().__init__(f"[{provider}] {message}")
         self.provider = provider
         self.status_code = status_code
@@ -43,14 +43,16 @@ class ProviderError(Exception):
 class ProviderRateLimitError(ProviderError):
     """Raised when a provider returns 429 Too Many Requests."""
 
-    def __init__(self, provider: str, message: str = "Rate limit reached"):
+    def __init__(self, provider: str, message: str = "Rate limit reached") -> None:
         super().__init__(provider=provider, message=message, status_code=429, is_rate_limit=True)
 
 
 class ProviderAuthError(ProviderError):
     """Raised when API key is missing or invalid (401/403)."""
 
-    def __init__(self, provider: str, message: str = "Authentication failed / invalid API key"):
+    def __init__(
+        self, provider: str, message: str = "Authentication failed / invalid API key"
+    ) -> None:
         super().__init__(provider=provider, message=message, status_code=401)
 
 

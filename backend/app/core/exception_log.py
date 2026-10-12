@@ -24,6 +24,22 @@ from typing import Any, TextIO
 from app.core.config import Settings
 from app.core.correlation import current_node, current_turn
 
+# ── Platform-safe wrappers for POSIX-only APIs ──────────────────────────────
+# The restricted-logging path requires POSIX ownership and open flags.
+# On non-POSIX systems (Windows dev), provide stubs; the RuntimeError in
+# RestrictedExceptionHandler.__init__ blocks actual use before these run.
+
+
+def _geteuid() -> int:
+    """Return the effective UID, or 0 on non-POSIX (guarded by the POSIX check)."""
+    fn = getattr(os, "geteuid", None)
+    return fn() if fn is not None else 0
+
+
+def _o_nofollow() -> int:
+    """Return O_NOFOLLOW, or 0 on platforms that lack it."""
+    return getattr(os, "O_NOFOLLOW", 0)
+
 # ── Identifier and record-name validation ────────────────────────────────────
 _IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_.-]{0,159}$")
 _RECORD_NAME = re.compile(r"^[0-9a-f]{32}\.json$")
@@ -290,6 +306,11 @@ def safe_exception(exc: BaseException) -> dict[str, Any]:
 class RestrictedExceptionHandler(logging.Handler):
     """One bounded JSON record per exception, outside stdout/container logs."""
 
+    directory: Path
+    retention_seconds: int
+    max_records: int
+    failed: bool
+
     def __init__(self, directory: str, retention_hours: int, max_records: int) -> None:
         super().__init__()
         if os.name != "posix":
@@ -298,7 +319,7 @@ class RestrictedExceptionHandler(logging.Handler):
         if self.directory.resolve() != self.directory:
             raise RuntimeError("Exception directory must not contain symlinks")
         self.directory.mkdir(mode=0o700, parents=True, exist_ok=True)
-        if self.directory.stat().st_uid != os.geteuid():
+        if self.directory.stat().st_uid != _geteuid():
             raise RuntimeError("Exception directory must belong to the service account")
         self.directory.chmod(0o700)
         self.retention_seconds = retention_hours * 3600
@@ -306,7 +327,7 @@ class RestrictedExceptionHandler(logging.Handler):
         self.failed = False
         # Fail startup if writes or retention cannot be enforced.
         probe = self.directory / (uuid.uuid4().hex + ".probe")
-        fd = os.open(probe, os.O_CREAT | os.O_EXCL | os.O_WRONLY | os.O_NOFOLLOW, 0o600)
+        fd = os.open(probe, os.O_CREAT | os.O_EXCL | os.O_WRONLY | _o_nofollow(), 0o600)
         os.close(fd)
         probe.unlink()
         self.prune()
@@ -321,7 +342,7 @@ class RestrictedExceptionHandler(logging.Handler):
                 if not _RECORD_NAME.fullmatch(path.name):
                     continue
                 info = path.lstat()
-                if not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid():
+                if not stat.S_ISREG(info.st_mode) or info.st_uid != _geteuid():
                     raise RuntimeError("Unsafe exception record permissions")
                 path.chmod(0o600)
                 if info.st_mtime <= cutoff:
@@ -335,7 +356,7 @@ class RestrictedExceptionHandler(logging.Handler):
         # This handler receives only already-sanitized records from PrivacyFilter.
         payload: dict[str, Any] = record.__dict__["restricted_payload"]
         path = self.directory / (payload["error_ref"] + ".json")
-        fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY | os.O_NOFOLLOW, 0o600)
+        fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY | _o_nofollow(), 0o600)
         with os.fdopen(fd, "w", encoding="utf-8") as stream:
             json.dump(payload, stream, ensure_ascii=True)
             stream.write("\n")
@@ -437,12 +458,12 @@ class LoggingBoundary:
 
 def admin_read(directory: str, error_ref: str) -> dict[str, Any]:
     """Local OS-admin read path; there is deliberately no public HTTP endpoint."""
-    if os.name != "posix" or os.geteuid() != 0:
+    if os.name != "posix" or _geteuid() != 0:
         raise PermissionError("OS administrator role required")
     if not re.fullmatch(r"[0-9a-f]{32}", error_ref):
         raise ValueError("Invalid error reference")
     path = Path(directory) / f"{error_ref}.json"
-    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+    fd = os.open(path, os.O_RDONLY | _o_nofollow())
     with os.fdopen(fd, encoding="utf-8") as stream:
         return dict(json.load(stream))
 

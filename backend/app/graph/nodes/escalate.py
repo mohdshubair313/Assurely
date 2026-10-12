@@ -146,7 +146,7 @@ async def escalate_node(state: SessionState) -> dict[str, Any]:
         payload = {
             "event_id": event_id,
             "event_type": "advisor_review_requested",
-            "session_id": state["session_id"],
+            "session_id": state.get("session_id", ""),
             "reason": state.get("escalation_reason") or "Advisor review remains required.",
             "approved": state.get("approved") is True,
             "report_available": bool(state.get("output")),
