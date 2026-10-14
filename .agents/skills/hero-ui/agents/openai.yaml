@@ -1,0 +1,4 @@
+interface:
+  display_name: "Hero UI"
+  short_description: "Build polished, responsive app hero sections"
+  default_prompt: "Use $hero-ui to create or refine my app hero section with responsive layout and visual verification."

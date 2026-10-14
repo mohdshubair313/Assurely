@@ -1,19 +1,29 @@
+import Image from "next/image";
 import Link from "next/link";
 import Glyph from "@/components/ui/Glyph";
-import HouseScene from "./HouseScene";
+import celestialStation from "@/public/images/Celestial Station Above the Clouds.png";
+import HeroClouds from "./HeroClouds";
+import styles from "./CelestialHero.module.css";
+
 export default function HeroSection() {
-  return <section className="reference-hero">
-    <div className="reference-container hero-grid">
-      <div className="hero-copy">
-        <h1>Insurance shouldn’t<br className="wide-break" /> make you guess<br className="wide-break" /> what your family is<br className="wide-break" /> <em>covered</em> for.</h1>
-        <p>Tell us what matters. We translate policy terms, compare the real-world trade-offs, and show exactly what to ask before you decide.</p>
-        <div className="hero-actions"><Link className="pill-button" href="/intake">Find my cover <Glyph name="arrow" size={15} /></Link><Link className="pill-button secondary" href="/#how-it-works"><span className="play-icon">▷</span> See how comparisons work</Link></div>
-        <p className="hero-caption">Your needs. A clearer picture. No pressure to buy.</p>
-        <div className="hero-assurances"><span><Glyph name="chat" size={18} />Ask in plain<br />language</span><span><Glyph name="file" size={18} />Understand<br />the fine print</span><span><Glyph name="compare" size={18} />See the<br />trade-offs</span></div>
+  return (
+    <section className={styles.hero} aria-labelledby="hero-title">
+      <div className={styles.art}>
+        <Image src={celestialStation} alt="" preload sizes="100vw" className={styles.image} />
+        <HeroClouds />
       </div>
-      <div className="hero-art-wrap">
-        <HouseScene />
+      <div className={styles.constellation} aria-hidden="true"><span>✦</span><span>✦</span><span>✦</span><span>✦</span></div>
+      <div className={styles.copy}>
+        <p className={styles.eyebrow}><span /> A clearer way to explore health insurance</p>
+        <h1 id="hero-title" className={styles.title}>Less guesswork.<br /><em>More peace of mind.</em></h1>
+        <p className={styles.description}>Understand the fine print, explore the trade-offs,<br className={styles.desktopBreak} /> and find cover that fits your life.</p>
+        <div className={styles.actions}>
+          <Link className={styles.primary} href="/intake">Find my cover <Glyph name="arrow" size={18} /></Link>
+          <Link className={styles.secondary} href="/#how-it-works">See how it works <span aria-hidden="true">↗</span></Link>
+        </div>
+        <p className={styles.caption}>Your needs. Your pace. No pressure to buy.</p>
       </div>
-    </div>
-  </section>;
+      <div className={styles.sceneNote} aria-hidden="true"><span /> A little clarity goes a long way.</div>
+    </section>
+  );
 }

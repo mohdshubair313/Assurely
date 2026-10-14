@@ -1,4 +1,3 @@
-
 ---
 name: bug-hunt
 description: Use when investigating runtime bugs, failing tests, or regressions. Do not use for normal feature requests.

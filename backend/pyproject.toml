@@ -28,7 +28,8 @@ dependencies = [
     "langchain-core>=0.3.0",
 
     # Vector DB
-    "chromadb>=0.6.0,<0.7.0",
+    "chromadb==0.6.3",  # Match the persistent server image in docker-compose.yml.
+    "posthog==3.8.3",  # Chroma 0.6.3 uses the legacy positional capture API.
 
     # LLM providers
     "httpx>=0.28.0",

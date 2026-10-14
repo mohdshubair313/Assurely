@@ -90,6 +90,52 @@ def _make_doc(**overrides: Any) -> PolicyDocument:
 class TestHiddenClauseDetector:
     """Unit tests for _detect_hidden_clauses."""
 
+    @pytest.mark.parametrize("has_ped", [True, False])
+    @pytest.mark.parametrize("waiting_days", [1095, 1110, 31])
+    def test_ped_waiting_period_preserves_exact_day_units(
+        self, has_ped: bool, waiting_days: int
+    ) -> None:
+        """Neither profile branch may invent a month equivalent of the DB value."""
+        terms = _make_terms(
+            waiting_period_days_preexisting=waiting_days, exclusions_json=[]
+        )
+        clauses = _detect_hidden_clauses(
+            terms, _make_doc(), {"age": 35, "pre_existing_conditions": has_ped}, []
+        )
+
+        expected_reason = (
+            "User has declared pre-existing conditions. Coverage for those "
+            f"conditions will not apply for {waiting_days} days from policy inception."
+            if has_ped
+            else "Applies to any pre-existing conditions diagnosed before policy start."
+        )
+        assert clauses == [
+            {
+                "clause": f"Pre-existing disease waiting period: {waiting_days} days",
+                "severity": "high" if has_ped else "medium",
+                "reason": expected_reason,
+                "source": "policy_terms table (InsuranceAI DB)",
+                "last_verified": "2024-01-01",
+            }
+        ]
+        assert "months" not in clauses[0]["clause"] + clauses[0]["reason"]
+
+    @pytest.mark.parametrize("has_ped", [True, False])
+    @pytest.mark.parametrize("waiting_days", [0, None])
+    def test_absent_or_zero_ped_wait_does_not_create_clause(
+        self, has_ped: bool, waiting_days: int | None
+    ) -> None:
+        """Preserve omission for zero or missing waits in both profile branches."""
+        terms = _make_terms(
+            waiting_period_days_preexisting=waiting_days, exclusions_json=[]
+        )
+        assert (
+            _detect_hidden_clauses(
+                terms, _make_doc(), {"age": 35, "pre_existing_conditions": has_ped}, []
+            )
+            == []
+        )
+
     def test_ped_user_gets_high_severity_waiting_period(self) -> None:
         """User with PED should receive a high-severity clause for waiting period."""
         terms = _make_terms()
@@ -332,6 +378,12 @@ class TestCompareVerifyNode:
         assert "need_fit_view" in draft
         assert len(draft["need_fit_view"]) == 2
         assert draft["total_policies_evaluated"] == 2
+        for entry in draft["need_fit_view"]:
+            assert entry["waiting_period_days_preexisting"] == {
+                "value": 1095,
+                "source": "policy_terms table (InsuranceAI DB)",
+                "last_verified": "2024-01-01",
+            }
 
     @pytest.mark.asyncio
     async def test_writes_hidden_clauses(self) -> None:

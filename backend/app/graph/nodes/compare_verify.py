@@ -24,7 +24,6 @@ RAG is used here ONLY for clause wording to explain in plain language.
 from __future__ import annotations
 
 import logging
-import math
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any, cast
@@ -112,17 +111,17 @@ def _detect_hidden_clauses(
     # 2. Pre-existing disease waiting period (always flag if user has PED)
     has_ped = bool(user_profile.get("pre_existing_conditions"))
     if has_ped and terms.waiting_period_days_preexisting:
-        months = math.ceil(terms.waiting_period_days_preexisting / 30)
         flagged.append(
             {
                 "clause": (
                     "Pre-existing disease waiting period: "
-                    f"{terms.waiting_period_days_preexisting} days ({months} months)"
+                    f"{terms.waiting_period_days_preexisting} days"
                 ),
                 "severity": "high",
                 "reason": (
                     "User has declared pre-existing conditions. Coverage for those "
-                    f"conditions will not apply for {months} months from policy inception."
+                    f"conditions will not apply for {terms.waiting_period_days_preexisting} "
+                    "days from policy inception."
                 ),
                 "source": _DB_SOURCE,
                 "last_verified": _LAST_VERIFIED,
@@ -130,10 +129,12 @@ def _detect_hidden_clauses(
         )
     elif terms.waiting_period_days_preexisting:
         # Flag even without declared PED — medium severity
-        months = math.ceil(terms.waiting_period_days_preexisting / 30)
         flagged.append(
             {
-                "clause": f"Pre-existing disease waiting period: {months} months",
+                "clause": (
+                    "Pre-existing disease waiting period: "
+                    f"{terms.waiting_period_days_preexisting} days"
+                ),
                 "severity": "medium",
                 "reason": "Applies to any pre-existing conditions diagnosed before policy start.",
                 "source": _DB_SOURCE,

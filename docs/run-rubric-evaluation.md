@@ -6,7 +6,42 @@ runner does not open or change `.env`. It privately uses credentials already loa
 running `insurance-api` container. Existing application containers and data are retained;
 each evaluation uses a separate temporary container that is removed when it exits.
 
-## October 12 checkpoint: all eight cases scored; no further run needed
+## October 13: current-code evaluation after maintenance
+
+The October 12 matrix remains a historical baseline. Named-policy retrieval, report request
+scope, and exact waiting-period units have changed since then. A fresh case-04 run passes
+all six rubric criteria (retrieval 1.00, generation 1.00), with Postgres/Langfuse verification.
+Other cases have not been evaluated under this report prompt. Do not merge the new case-04
+score into the older matrix: their pipeline fingerprints differ.
+
+Following your preference to run larger token-consuming batches yourself, run this **once**
+when ready. Keep Docker Desktop running. No `.env` edits or pasted keys are needed.
+
+```powershell
+Set-Location D:\Projects\InsuranceAI
+$env:PYTHONUTF8 = "1"
+python backend/eval/rubric_live.py --preflight
+```
+
+Proceed only if the result is `preflight_passed`. Then:
+
+```powershell
+python backend/eval/rubric_live.py --output-name rubric-postfix-full-2026-10-13.json 2>&1 | Tee-Object -FilePath artifacts/rubric-postfix-full-2026-10-13.log
+```
+
+Allow roughly 25?35 minutes or longer for provider latency. Eight judge calls have at most
+32,768 completion tokens, plus judge input and pipeline calls. Existing 60-second post-pipeline
+and 180-second between-case cooldowns remain. The pinned judge is the free OpenRouter model;
+no model, token-limit or billing changes are requested. This is a changed-code regression run,
+not a blind retry of the completed baseline. Do not rerun if an error occurs.
+
+Share the new JSON and log. Only final `status: complete` confirms scores and provenance.
+`verification_incomplete` or `run_failed` requires inspecting the exact error first.
+Human correctness labels and confidence calibration remain separate; passing this batch
+will not substitute for them. Existing filenames are protected from overwrite.
+
+## October 12 historical checkpoint: all eight baseline cases scored
+
 
 The three scored cases in `rubric-live-v3-2026-10-11.json` and the five scored cases in
 `rubric-live-v3-remaining-2026-10-11.json` use identical rubric, prompt, model, source and

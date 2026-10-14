@@ -17,8 +17,14 @@ RUN apt-get update && \
 # Copy source and pyproject
 COPY . .
 
-# Install Python dependencies
-RUN pip install --no-cache-dir -e ".[dev]"
+# Maintenance builds may constrain unrelated versions without baking the local
+# constraints snapshot into the image.
+RUN --mount=type=secret,id=dependency_constraints \
+    if [ -f /run/secrets/dependency_constraints ]; then \
+        pip install --no-cache-dir -c /run/secrets/dependency_constraints -e ".[dev]"; \
+    else \
+        pip install --no-cache-dir -e ".[dev]"; \
+    fi && pip check
 
 
 # Expose port
