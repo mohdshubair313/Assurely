@@ -85,7 +85,33 @@ def _evidence_catalog(state: SessionState) -> list[dict[str, str]]:
     draft = state.get("draft_output", {})
     for fact in draft.get("cited_facts", []):
         if isinstance(fact, dict):
-            add(fact.get("claim"), fact.get("source"), fact.get("last_verified"), fact.get("url"))
+            if fact.get("kind") == "policy_record_status":
+                # Only compare_verify creates these internal facts. Retrieved
+                # metadata is copied through a field allowlist that excludes
+                # this marker; user request text never becomes evidence.
+                if (
+                    fact.get("verification_scope") != "database_record_lookup"
+                    or fact.get("status")
+                    not in {"active", "expired", "future", "invalid", "unknown"}
+                    or fact.get("as_of") != fact.get("last_verified")
+                ):
+                    continue
+                before = len(evidence)
+                add(
+                    fact.get("claim"),
+                    fact.get("source"),
+                    fact.get("last_verified"),
+                    fact.get("url"),
+                )
+                if len(evidence) > before:
+                    evidence[-1]["kind"] = "policy_record_status"
+            else:
+                add(
+                    fact.get("claim"),
+                    fact.get("source"),
+                    fact.get("last_verified"),
+                    fact.get("url"),
+                )
 
     for fact in state.get("retrieved_facts", []):
         if isinstance(fact, dict):
@@ -164,7 +190,25 @@ async def explanation_report_node(state: SessionState) -> dict[str, Any]:
         language = "en"
 
     sentences: list[dict[str, Any]] = []
-    if evidence:
+    status_request = any(
+        isinstance(fact, dict) and fact.get("kind") == "policy_record_status"
+        for fact in state.get("draft_output", {}).get("cited_facts", [])
+    )
+    if status_request:
+        # A record-validity question has one deterministic answer. Render the
+        # exact scoped lookup statements, excluding unrelated RAG/benefit facts.
+        # This is not a fallback for a failed provider or an empty ordinary report.
+        evidence = [item for item in evidence if item.get("kind") == "policy_record_status"]
+        try:
+            sentences = _parse_sentences(json.dumps({"sentences": [
+                {"text": item["claim"], "evidence_ids": [item["id"]]} for item in evidence
+            ]}), evidence)
+        except ExplanationReportError:
+            logger.exception("Deterministic policy-status evidence failed report validation")
+            return {"output": {}}
+        # Deterministic status templates currently have an English contract.
+        language = "en"
+    elif evidence:
         evidence_json = json.dumps(evidence, ensure_ascii=False, separators=(",", ":"))
         guardrail_notes = state.get("guardrail_notes", [])
         notes_json = json.dumps(

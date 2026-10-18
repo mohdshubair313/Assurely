@@ -156,6 +156,15 @@ async def postgres_versions(entries: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 async def execute(options: dict[str, Any]) -> int:
+    isolation = None
+    if options.get("case05_isolated_database"):
+        from eval.case05_fixture import prepare_isolated_database, verify_isolated_database
+
+        if options.get("prepare_case05_only"):
+            isolation = await prepare_isolated_database(options["case05_isolated_database"])
+            print(json.dumps({"status": "isolated_fixture_prepared", **isolation}), flush=True)
+            return 0
+        isolation = await verify_isolated_database(options["case05_isolated_database"])
     if not await preflight():
         return 2
     if options["preflight"]:
@@ -167,7 +176,6 @@ async def execute(options: dict[str, Any]) -> int:
     from app.graph.state import SessionState
     from eval import ragas_live as pipeline
     from eval.rubric_scorer import (
-        CRITERIA,
         JUDGE_MODEL,
         PROMPT_VERSION,
         RUBRIC_VERSION,
@@ -206,6 +214,7 @@ async def execute(options: dict[str, Any]) -> int:
         "labels_human_validated": False,
         "pipeline_source_sha256": options.get("pipeline_source_sha256"),
         "reference_sha256": hashlib.sha256(pipeline.REFERENCES_PATH.read_bytes()).hexdigest(),
+        "isolated_evaluation_fixture": isolation,
         "cases": [],
         "review_candidates": [],
         "pacing_seconds": {"between_cases": 180, "after_pipeline": 60},
@@ -262,13 +271,7 @@ async def execute(options: dict[str, Any]) -> int:
                     controls=controls,
                     **summary,
                     judge_usage=usage,
-                    not_applicable_criteria={
-                        name: "clarification"
-                        if case["id"] in pipeline.EARLY_RETURN_CASES
-                        else "no_retrieval_reference"
-                        for name in CRITERIA
-                        if name not in packet["rubric"] and CRITERIA[name][0] == "retrieval"
-                    },
+                    not_applicable_criteria=packet["not_applicable_criteria"],
                 )
                 if entry["review_candidate"]:
                     artifact["review_candidates"].append(
@@ -330,8 +333,18 @@ def main() -> int:
         "--preflight", action="store_true", help="Connectivity only; zero LLM calls"
     )
     parser.add_argument("--case", action="append", dest="cases", default=[])
+    parser.add_argument(
+        "--case05-isolated-database",
+        help="Initialize a newly provisioned, empty CASE05-only evaluation database",
+    )
+    parser.add_argument(
+        "--prepare-case05-only", action="store_true",
+        help="Explicitly initialize the empty isolated DB, then exit without model calls",
+    )
     parser.add_argument("--output-name", default=f"rubric-live-{datetime.now(UTC).date()}.json")
     args = parser.parse_args()
+    if args.prepare_case05_only and (not args.case05_isolated_database or args.preflight):
+        raise ValueError("Fixture preparation requires isolated DB and cannot use --preflight")
     if Path(args.output_name).name != args.output_name or not args.output_name.endswith(".json"):
         raise ValueError("Output must be a JSON filename inside artifacts")
     output = ROOT / "artifacts" / args.output_name
@@ -352,6 +365,12 @@ def main() -> int:
     except (OSError, ValueError, subprocess.TimeoutExpired) as exc:
         raise ValueError("Node.js/npx unavailable; install Node.js LTS before running") from exc
     runtime = dict(item.split("=", 1) for item in info["Config"]["Env"] if "=" in item)
+    if args.case05_isolated_database:
+        from eval.case05_fixture import isolated_database_url
+
+        runtime["DATABASE_URL"] = isolated_database_url(
+            runtime.get("DATABASE_URL", ""), args.case05_isolated_database, args.cases
+        )
     networks = info["NetworkSettings"]["Networks"]
     if len(networks) != 1:
         raise ValueError("Expected one backend Docker network; review configuration")
@@ -387,7 +406,7 @@ def main() -> int:
     completed = subprocess.run(
         command, input=json.dumps({"runtime": runtime, "options": options}), text=True
     )
-    if args.preflight or not output.exists():
+    if args.preflight or args.prepare_case05_only or not output.exists():
         return completed.returncode
     artifact = json.loads(output.read_text(encoding="utf-8"))
     trace_ids = {i for entry in artifact["cases"] for i in entry["trace_ids"]}

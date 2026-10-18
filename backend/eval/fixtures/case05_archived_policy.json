@@ -1,0 +1,12 @@
+{
+  "fixture_kind": "synthetic_isolated_evaluation_only",
+  "notice": "This is a fictional status record for CASE05. The product label matches the evaluation request only; these dates do not establish any real insurer product's validity. Never load into an application database or serve to real users.",
+  "policy_document_id": "99999999-9999-9999-9999-999999999999",
+  "policy_terms_id": "99999999-9999-9999-9999-999999999998",
+  "insurer": "Synthetic evaluation insurer (not a real insurer record)",
+  "product_name": "Health Companion 2021",
+  "doc_url": "eval://synthetic/case05_archived_policy.json",
+  "recorded_at": "2026-09-21T00:00:00+00:00",
+  "effective_date": "2021-01-01",
+  "expiry_date": "2023-12-31"
+}

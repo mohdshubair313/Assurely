@@ -1,18 +1,20 @@
-"""PII scrubbing — detects and masks personally identifiable information.
+"""Conservative PII masking for untrusted chat text before model calls."""
 
-Used by input_validate to sanitize user messages before they enter
-the graph, and by explanation_report to ensure no raw PII leaks
-into the output.
+from __future__ import annotations
 
-Handles:
-  - Aadhaar numbers
-  - PAN numbers
-  - Phone numbers
-  - Email addresses
-  - Bank account / IFSC codes
-  - Full names (when detectable)
+import re
 
-Masking is applied before any LLM call, especially important for
-free-tier providers where prompts may be used for model improvement
-(see HLD/LLD § 1 Gemini caveat).
-"""
+_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
+    (re.compile(r"(?i)\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b"), "[EMAIL REDACTED]"),
+    (re.compile(r"\b\d{4}[ -]?\d{4}[ -]?\d{4}\b"), "[AADHAAR REDACTED]"),
+    (re.compile(r"(?i)\b[A-Z]{5}\d{4}[A-Z]\b"), "[PAN REDACTED]"),
+    (re.compile(r"(?i)\b[A-Z]{4}0[A-Z0-9]{6}\b"), "[IFSC REDACTED]"),
+    (re.compile(r"(?<!\d)(?:\+?91[ -]?)?[6-9]\d{9}(?!\d)"), "[PHONE REDACTED]"),
+)
+
+
+def scrub_pii(text: str) -> str:
+    """Mask common Indian identifiers and contact details without logging values."""
+    for pattern, replacement in _PATTERNS:
+        text = pattern.sub(replacement, text)
+    return text

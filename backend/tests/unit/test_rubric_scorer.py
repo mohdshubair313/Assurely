@@ -156,6 +156,37 @@ def test_generation_fact_volume_does_not_expand_retrieval_indices():
     }
 
 
+def test_deterministic_policy_status_does_not_receive_a_clause_retrieval_score():
+    evidence = [{
+        "id": "status_1",
+        "kind": "policy_record_status",
+        "claim": "Stored terms expired on the recorded date.",
+        "source": "Synthetic isolated policy_terms record",
+        "last_verified": "2026-10-15",
+    }]
+    state = {
+        "user_profile": {"age": 40},
+        "output": {"sentences": [{"text": evidence[0]["claim"]}]},
+    }
+    sample = {
+        "answer": evidence[0]["claim"],
+        "answer_source": "generated_report",
+        "retrieved_chunks": [],
+    }
+    case = {"id": "case_05_outdated_policy", "category": "outdated_policies"}
+    packet = build_packet(case, sample, state, evidence, None)
+
+    assert "query_topic_coverage" not in packet["rubric"]
+    assert "reference_clause_coverage" not in packet["rubric"]
+    assert packet["not_applicable_criteria"] == {
+        "query_topic_coverage": "policy_terms_database_lookup_no_clause_retrieval",
+        "reference_clause_coverage": "policy_terms_database_lookup_no_clause_retrieval",
+    }
+    scores = parse_verdict(json.dumps({"scores": verdict(packet)}), packet)
+    summary = summarize(scores, {"citations_complete": {"status": "scored", "value": 1}})
+    assert summary["layer_scores"] == {"retrieval": None, "generation": 1.0}
+
+
 @pytest.mark.parametrize(
     "extra_key", ["generation_evidence_ids", "sentence_indices", "explanation"]
 )

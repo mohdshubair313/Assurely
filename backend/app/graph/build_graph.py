@@ -29,6 +29,7 @@ from app.graph.nodes.escalate import escalate_node
 from app.graph.nodes.explanation_report import explanation_report_node
 from app.graph.nodes.guardrail import guardrail_node
 from app.graph.nodes.health_domain_agent import health_domain_agent_node
+from app.graph.nodes.input_validate import input_validate_node
 from app.graph.nodes.intent_router import intent_router_node
 from app.graph.nodes.needs_intake import needs_intake_node
 from app.graph.nodes.persist_memory import persist_memory_node
@@ -50,6 +51,13 @@ def route_after_intake(state: SessionState) -> Literal["continue_intake", "route
         return "continue_intake"
     # Profile complete; advance to intent classification
     return "route_intent"
+
+
+def route_after_input_validation(
+    state: SessionState,
+) -> Literal["continue_pipeline", "reject_input"]:
+    """Route only validated input to model-backed intake."""
+    return "continue_pipeline" if state.get("input_status") == "accepted" else "reject_input"
 
 
 def route_after_intent(
@@ -84,6 +92,7 @@ def build_graph(
     builder: StateGraph[Any, Any, Any, Any] = StateGraph(cast(Any, SessionState))
 
     # 1. Register nodes
+    builder.add_node("input_validate", trace_node("input-validate", input_validate_node))
     builder.add_node("needs_intake", trace_node("needs-intake", needs_intake_node))
     builder.add_node("intent_router", trace_node("intent-router", intent_router_node))
     builder.add_node(
@@ -101,7 +110,15 @@ def build_graph(
     builder.add_node("persist_memory", trace_node("persist-memory", persist_memory_node))
 
     # 2. Wire entry point
-    builder.add_edge(START, "needs_intake")
+    builder.add_edge(START, "input_validate")
+    builder.add_conditional_edges(
+        "input_validate",
+        route_after_input_validation,
+        {
+            "continue_pipeline": "needs_intake",
+            "reject_input": "persist_memory",
+        },
+    )
 
     # 3. Deterministic conditional edge after needs_intake
     builder.add_conditional_edges(

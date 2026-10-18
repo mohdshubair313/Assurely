@@ -27,6 +27,9 @@
 .decoderHeader { display: flex; justify-content: space-between; align-items: flex-end; gap: 40px; margin-bottom: 38px; }
 .decoderHeader .heading { margin-bottom: 0; }
 .decoderHeader > p { max-width: 310px; }
+.decoderSide { display: flex; align-items: center; gap: 24px; }
+.folderPreview { display: grid; flex: 0 0 210px; justify-items: center; gap: 0; color: var(--ink-muted); font: 500 8px/1.4 var(--font-ibm-plex-mono), monospace; letter-spacing: .08em; }
+.folderPreview > div { width: 210px; height: 177px; }
 .decoderPanel { min-width: 0; border: 1px solid var(--landing-line); border-radius: 22px; background: var(--landing-paper); padding: 26px 28px 30px; box-shadow: 0 10px 35px #173d7008; }
 .decoderBar { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-bottom: 25px; }
 .decoderBar > span:first-child { display: inline-flex; align-items: center; gap: 10px; font-size: 10px; font-weight: 600; letter-spacing: .1em; }
@@ -142,4 +145,5 @@
 @keyframes question-arrive { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
 @media (hover: hover) and (pointer: fine) { .reflectiveSurface:hover .surfaceSheen { opacity: 1; } }
 @media (max-width: 650px) { .faqContent { padding: 20px; } .faqQuestion { gap: 10px; } .evidenceRail { font-size: 7px; } .termQuestion { padding: 10px 0; } }
+@media (max-width: 650px) { .decoderSide { width: 100%; flex-direction: column; align-items: center; gap: 0; } .decoderSide .lede { align-self: flex-start; max-width: 460px; } .folderPreview { flex-basis: auto; } }
 @media (prefers-reduced-motion: reduce) { .surfaceSheen { display: none; } .claimResponse blockquote { animation: none; } .faqNumber { transition: none; } }

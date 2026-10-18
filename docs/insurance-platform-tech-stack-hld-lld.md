@@ -106,13 +106,16 @@ class SessionState(TypedDict):
     delivery_hold: bool            # fail-closed API release gate; queue ACK never clears it
     advisor_notification: dict     # dispatch receipt; not advisor sign-off
     output: dict                  # written by explanation_report, not guardrail — see 7.2
+    target_language: str           # detected/specified: "hi", "en", or "hi-en-mixed"
+    input_status: str              # accepted or rejected by input_validate
+    input_rejection_code: str | None  # internal reason; never returned to the user
 ```
 
 ### 7.2 Node list
 
 | Node | Trigger | Reads | Writes | Calls |
 |---|---|---|---|---|
-| `input_validate` | new message | raw input | validated input | schema/PII checks |
+| `input_validate` | every new message | user message | sanitized messages, input status, target language | size/empty checks, PII masking, direct-injection screening |
 | `needs_intake` | session start / missing_fields non-empty | user_profile | user_profile, missing_fields, calculator_outputs | LLM (Groq), calculator functions |
 | `intent_router` | user_profile complete | user_profile | intent | LLM classification (cheap/fast model); routes to `health_flow`, `life_deferred` (Phase 1 scope disclosure), or `unclear_intent` |
 | `life_domain_agent` | intent == "life" (Deferred: Phase 5) | user_profile | retrieved_facts (partial) | RAG retriever, LLM. *In Phase 1, `route_after_intent` directs `intent == "life"` to the `life_deferred` branch with scope disclosure instead of calling this agent.* |
@@ -120,13 +123,13 @@ class SessionState(TypedDict):
 | `risk_analysis` | after intake | user_profile | calculator_outputs (risk-adjusted sizing) | calculator functions |
 | `compare_verify` | after domain agents | retrieved_facts, `policy_terms` lookups | draft_output, hidden_clauses, transparency_scores | Deterministic rules-engine lookups for anything with a correct answer; LLM only for prose synthesis |
 | `guardrail` | after compare_verify | draft_output | guardrail_notes, approved, escalation, escalation_reason | Hallucination check (re-query sources), rule engine — does **not** write `output` |
-| `explanation_report` | after guardrail (runs regardless of escalation) | draft_output, guardrail_notes, retrieved_facts, target_language, messages | output | LLM rendering with separately delimited active-request scope in target_language |
+| `explanation_report` | after guardrail (runs regardless of escalation) | draft_output, guardrail_notes, retrieved_facts, target_language, messages | output | Deterministic rendering for explicit stored-policy validity questions; otherwise LLM rendering with separately delimited active-request scope in target_language |
 | `escalate` | after report generation; delivery hold applies if escalation or not approved | escalation_reason, output availability | advisor_notification receipt, delivery_hold | configured advisor queue; test receiver is not a production destination |
 | `persist_memory` | every completed turn | full state, verified user identity when supplied, durable save_profile consent | unconditional `decision_trace`; consent-gated user profile snapshot | Postgres |
 
 ### 7.3 Request sequence
 
-1. Message in → `input_validate` → rate-limit check.
+1. Message in → `input_validate`; accepted text proceeds to `needs_intake`, while rejected input exits to `persist_memory` without entering model-backed nodes. Rate limiting remains separate API/LLM middleware.
 2. `needs_intake` runs; loops on itself while `missing_fields` is non-empty.
 3. `intent_router` sets `intent`.
 4. LangGraph fans out in parallel to the relevant domain agent(s) + `risk_analysis` — plain conditional edges over `intent`, never an LLM deciding who to call.
@@ -134,8 +137,40 @@ class SessionState(TypedDict):
 6. `guardrail` fact-checks and enforces language rules; sets `approved` / `escalation` — it does not write the final text.
 7. `explanation_report` always runs next, rendering the rationale, comparison, and citations into `output` — this gives an escalated case something concrete for the advisor to review, not a blocked draft.
 8. `escalate` runs after report generation. It dispatches a notification when review is required and preserves delivery hold on escalation, missing approval, an unconfigured destination, or dispatch failure. A queue receipt is not advisor approval and never releases output. The API independently enforces this hold and redacts report/draft/calculator/citation fields while held.
-9. `persist_memory` writes one decision trace on every completed turn, including early-return intake and intent routes. Only the separate profile-memory upsert is gated by verified user identity and active `save_profile` consent.
+9. `persist_memory` writes one decision trace on every completed turn, including rejected-input, early-return intake, and intent routes. Only the separate profile-memory upsert is gated by verified user identity and active `save_profile` consent.
 10. The API returns the result with per-claim source tags unless the escalation delivery hold applies.
+
+#### Stored policy-version status (CASE05 maintenance, 2026-10-15)
+
+An explicit policy-validity question requires a separate deterministic lookup of the
+requested stored product/version, including archived records. Active comparisons use
+the server's UTC date: `effective_date <= today` and either no expiry date or
+`today <= expiry_date`. Both boundary dates are inclusive. Missing/invalid date windows
+must not establish active status. User-supplied dates are assertions, not overrides of
+stored dates or the server clock.
+
+Status evidence describes the **stored terms record's validity**, not whether an
+individual's insurance coverage has ended or whether an insurer discontinued a product.
+An unknown or ambiguous requested version must remain unresolved rather than inheriting
+another version's dates. Archived terms stay outside the active need-fit comparison.
+
+The existing `draft_output` carries status evidence with document/terms identities and
+version hashes. `explanation_report` remains the sole writer of `output` and renders the
+status statement deterministically so an LLM cannot omit or reinterpret it. General
+clause explanations retain their existing generation path. Status-only answers explicitly
+limit their scope to recorded validity; they do not establish coverage or benefit details.
+Escalation still gates delivery independently of report generation.
+
+For this evidence, `last_verified` means **the database record was checked on that date**;
+the source and claim must state that limited meaning. Neither the lookup timestamp nor
+`ingested_at` certifies insurer-source verification. Deviation #5 remains open. Audit
+provenance must identify the actual active/status records used, including an archived
+requested version, rather than re-querying only rows with null expiry dates.
+
+Case 05's historical record is explicitly synthetic and belongs only in an isolated
+evaluation database. It must never be added to the normal application seed or represented
+as a verified commercial policy. No database migration, shared-state schema change, or
+graph-edge change is part of this maintenance.
 
 ### 7.4 Postgres schema (sketch)
 

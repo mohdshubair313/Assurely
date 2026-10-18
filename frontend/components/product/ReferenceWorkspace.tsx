@@ -1,73 +1,92 @@
 "use client";
+
 import { useState } from "react";
-import Link from "next/link";
 import Glyph from "@/components/ui/Glyph";
+import styles from "@/app/(product)/comparison/comparison.module.css";
 
 const facts = [
-  { label: "Sum insured", icon: "shield", detail: "The amount available for eligible claims.", question: "What limit applies to each person and the whole family?" },
-  { label: "Room rent limit", icon: "heart", detail: "Check whether your room choice changes the amount payable.", question: "Is there a room category or daily expense limit?" },
-  { label: "Waiting period", icon: "clock", detail: "Check when each type of cover starts.", question: "Which waiting periods apply to this application?" },
-  { label: "Day-care surgery", icon: "file", detail: "Look for the procedures and conditions listed in the wording.", question: "Which day-care treatments are included or excluded?" },
-  { label: "Co-payment", icon: "compare", detail: "Check any share of an eligible claim you would need to pay.", question: "When does a co-payment apply, and how is it calculated?" },
-  { label: "Pre-existing conditions", icon: "heart", detail: "Review disclosure requirements and the relevant policy clauses.", question: "How are declared conditions treated by this policy?" },
-];
-const sections = [
-  ["Policy facts", "The terms, in plain language", "file"],
-  ["Coverage analysis", "What to examine for your needs", "shield"],
-  ["Gaps & limits", "The details worth a closer look", "search"],
-  ["Sources & trail", "Where each answer comes from", "folder"],
+  { label: "Sum insured", group: "Financial limits", icon: "shield", detail: "Compare the total cover, whether it is shared across the family, and any benefit-specific caps.", question: "What is the total amount available, and which limits apply to each benefit?" },
+  { label: "Room category", group: "Hospital expenses", icon: "heart", detail: "Room eligibility can affect more than the room bill. Review linked deductions and conditions in the same wording.", question: "Which room categories are allowed, and can choosing another room affect other costs?" },
+  { label: "Co-payment", group: "Your share", icon: "compare", detail: "Check when a co-payment applies, how the share is calculated, and whether any situations are treated differently.", question: "When would I pay a share of an eligible claim, and how is it calculated?" },
+  { label: "Waiting periods", group: "When cover begins", icon: "clock", detail: "Different benefits or conditions can have different waiting periods. Compare the exact start and end rules.", question: "Which waiting period applies to each benefit or declared condition?" },
+  { label: "Pre-existing conditions", group: "Disclosures", icon: "heart", detail: "Look at the disclosure requirements and the policy wording that applies to conditions declared in the application.", question: "How are declared conditions handled, and what wording supports that answer?" },
+  { label: "Day-care procedures", group: "Treatments", icon: "file", detail: "Check the listed procedures, admission requirements, and exclusions rather than relying on a broad summary.", question: "Which day-care treatments are included, and what conditions apply?" },
+  { label: "Restoration benefit", group: "Cover during a policy year", icon: "shield", detail: "Compare what triggers restoration, how much can be restored, and which claims can use it.", question: "When does restoration apply, and what limits or conditions govern its use?" },
+  { label: "Cashless hospitals", group: "Access to care", icon: "search", detail: "Network information can change. Confirm the hospital and location against a current insurer source.", question: "Is my preferred hospital currently in the network for this policy?" },
 ];
 
-export default function ReferenceWorkspace({ comparison = false }: { comparison?: boolean }) {
-  const [section, setSection] = useState(0);
-  const [selected, setSelected] = useState(1);
+function SourceCell() {
+  return <span className={styles.sourceCell}><Glyph name="file" size={15} /> Awaiting wording<small>Policy document needed</small></span>;
+}
+
+export default function ReferenceWorkspace() {
+  const [selected, setSelected] = useState(0);
   const [claim, setClaim] = useState("");
-  const [checked, setChecked] = useState(false);
-  return <div className={`reference-workspace${comparison ? " is-comparison" : ""}`}>
-    <div className="preview-note"><span className="preview-dot" />Interactive design preview · No policy has been verified. Examples are not insurance recommendations.</div>
-    <div className="case-grid" id="policy-decoder">
-      <section className="paper-panel case-panel">
-        <div className="case-tabs"><span className="active"><Glyph name="folder" size={17} />Health insurance case</span><span>YOUR COVER, UNDERSTOOD</span></div>
-        <div className="case-body">
-          <div className="panel-heading"><Glyph name="folder" size={30} /><div><h2>Health Insurance Case</h2><p>Policy details, coverage, exclusions and what the evidence shows.</p></div><span className="mini-stamp"><Glyph size={17} /> SAMPLE<br />CASE FILE</span></div>
-          <h3 className="eyebrow">A clearer picture</h3>
-          <div className="findings"><span><Glyph name="file" size={13} />6 areas to explore</span><span><Glyph name="search" size={13} />Sources pending</span><span>Every detail deserves<br />a closer look.</span></div>
-          <div className="case-content"><div className="case-menu">{sections.map(([title, subtitle, icon], i) => <button key={title} className={section === i ? "selected" : ""} onClick={() => setSection(i)} aria-pressed={section === i}><Glyph name={icon} size={21} /><span><strong>{title}</strong><small>{subtitle}</small></span><span>›</span></button>)}</div><div className="case-folder"><span className="paper-clip" /><p>Your<br />independent<br />case file</p><Glyph size={26} /></div></div>
-          <div className="section-detail" aria-live="polite">{[
-            "Select a policy fact below to see the question to ask.",
-            "Your profile and policy wording will be needed to assess need-fit.",
-            "Exclusions, room limits and waiting periods need document checks.",
-            "Source documents and verification dates will appear with each checked claim.",
-          ][section]}</div>
+  const [checkedClaim, setCheckedClaim] = useState<string | null>(null);
+  const selectedFact = facts[selected];
+
+  return <main className={styles.workspace}>
+    <div className={styles.previewNote}><span className={styles.previewDot} /><span><strong>Design preview.</strong> No policy documents are connected, so no policy terms have been verified.</span></div>
+
+    <section className={styles.metrics} aria-label="Comparison status">
+      <div className={styles.metric}><span className={styles.metricValue}>08</span><span className={styles.metricLabel}>Details to review<small>Questions across your health cover</small></span></div>
+      <div className={styles.metric}><span className={styles.metricValue}>02</span><span className={styles.metricLabel}>Policy slots<small>Side-by-side document columns</small></span></div>
+      <div className={styles.metric}><span className={styles.metricValue}>00</span><span className={styles.metricLabel}>Terms verified<small>Sources required before comparison</small></span></div>
+    </section>
+
+    <section className={`${styles.panel} ${styles.matrixPanel}`} aria-labelledby="matrix-title">
+      <div className={styles.panelHeading}><div><p className={styles.panelKicker}>THE SIDE-BY-SIDE REVIEW</p><h2 id="matrix-title">Policy difference matrix</h2></div><p>Each cell stays open until its policy wording is available to check.</p></div>
+      <p className={styles.scrollHint}>Swipe sideways to compare both policy columns.</p>
+      <div className={styles.tableScroll} role="region" aria-label="Policy difference matrix. Scroll horizontally to compare policy columns." tabIndex={0}>
+        <table className={styles.matrix}>
+          <caption className={styles.srOnly}>A comparison checklist for two health policies. No policy documents have been provided or verified.</caption>
+          <thead><tr><th scope="col">Policy detail</th><th scope="col">Policy A</th><th scope="col">Policy B</th><th scope="col">Evidence status</th><th scope="col"><span className={styles.srOnly}>Explore detail</span></th></tr></thead>
+          <tbody>{facts.map((fact, index) => <tr key={fact.label} className={selected === index ? styles.selected : undefined}>
+            <th scope="row"><span className={styles.factName}>{fact.label}<small>{fact.group}</small></span></th>
+            <td><SourceCell /></td><td><SourceCell /></td>
+            <td className={styles.statusCell}><span className={styles.statusTag}>Not checked</span></td>
+            <td><button type="button" className={styles.exploreButton} onClick={() => setSelected(index)} aria-label={`Explore ${fact.label}`} aria-pressed={selected === index}><Glyph name="arrow" size={16} /></button></td>
+          </tr>)}</tbody>
+        </table>
+      </div>
+      <div className={styles.tableFoot}><span>Both policy columns are placeholders until documents are supplied.</span><span>Source · Not supplied &nbsp; / &nbsp; Verified · No</span></div>
+    </section>
+
+    <section className={styles.detailGrid} aria-label="Selected policy detail">
+      <article className={`${styles.panel} ${styles.detailPanel}`}>
+        <div className={styles.detailTop}><p className={styles.panelKicker}>SELECTED DETAIL / {String(selected + 1).padStart(2, "0")}</p><span className={styles.selectedIndex}>08 ITEMS</span></div>
+        <div className={styles.detailContent} key={selected}>
+          <h3>{selectedFact.label}</h3>
+          <p className={styles.detailSummary}>{selectedFact.detail}</p>
+          <div className={styles.questionBox}><span>A QUESTION WORTH ASKING</span><p>{selectedFact.question}</p></div>
         </div>
-      </section>
-      <section className="paper-panel claim-panel">
-        <Glyph name="search" size={47} /><h2>What did they tell you?</h2><p>Tell us what the agent said.<br />Let’s check it against the policy wording.</p>
-        <form onSubmit={e => { e.preventDefault(); setChecked(true); }}>
-          <label htmlFor="agent-claim" className="sr-only">What did the agent tell you?</label>
-          <input id="agent-claim" value={claim} onChange={e => { setClaim(e.target.value); setChecked(false); }} placeholder="“All hospital rooms are covered…”" required maxLength={600} />
-          <small>No policy document connected in this preview.</small>
-          <button className="pill-button small" type="submit">Check against policy <Glyph name="arrow" size={14} /></button>
-        </form>
-        <div className="claim-result" role="status"><div className="result-title"><Glyph name={checked ? "search" : "file"} size={24} /><div><strong>{checked ? "Policy wording needed" : "Evidence before an answer"}</strong><span>{checked ? "Your statement has not been verified." : "A claim needs a source, not an assumption."}</span></div></div>
-          {checked && <blockquote>“{claim}”</blockquote>}
-          <p>{checked ? "This preview cannot check a claim. A source document and a verification date are required before a result can be shown." : "The source clause and its verification date belong beside every policy answer."}</p><div className="evidence-meta"><span><Glyph name="file" size={12} />Source pending</span><span><Glyph name="clock" size={12} />Date pending</span></div>
-        </div>
-      </section>
-    </div>
-    <div className="facts-grid" id="what-we-compare">
-      <section className="paper-panel facts-panel">
-        <div className="panel-heading"><Glyph name="file" size={30} /><div><h2>{comparison ? "Policy comparison" : "Policy Facts"}</h2><p>What to look for in the wording — one detail at a time.</p></div><span className="mini-stamp"><Glyph name="lock" size={16} /> EVIDENCE<br />PENDING</span></div>
-        <div className="facts-table-wrap"><table className="facts-table"><thead><tr><th>What you get</th><th>{comparison ? "Policy A" : "Policy details"}</th>{comparison && <th>Policy B</th>}<th>Status</th><th>Explore</th></tr></thead><tbody>{facts.map((fact, i) => <tr key={fact.label} className={selected === i ? "active-fact" : ""}><th scope="row"><span><Glyph name={fact.icon} size={17} />{fact.label}</span></th><td>Awaiting document</td>{comparison && <td>Awaiting document</td>}<td><span className="pending-status">Unverified</span></td><td><button onClick={() => setSelected(i)} aria-label={`Explore ${fact.label}`} aria-pressed={selected === i}><Glyph name="search" size={17} /></button></td></tr>)}</tbody></table></div>
-        <div className="facts-footer"><span>Source: not supplied</span><span>Last verified: not yet verified</span></div>
-      </section>
-      <aside className="paper-panel evidence-panel" aria-live="polite">
-        <div className="clause-paper"><span className="paper-clip" /><div className="eyebrow"><Glyph name="search" size={15} />EXHIBIT {String.fromCharCode(65 + selected)} · EXAMPLE</div><h3>{facts[selected].label}</h3><p>Original policy wording will appear here after the source document is checked.</p><span className="document-lines" /></div>
-        <h3 className="eyebrow">In plain language</h3><p>{facts[selected].detail}</p>
-        <h3 className="eyebrow">A question worth asking</h3><p>{facts[selected].question}</p>
-        <div className="evidence-meta"><span><Glyph name="file" size={12} />Source pending</span><span><Glyph name="clock" size={12} />Date pending</span></div>
+      </article>
+      <aside className={`${styles.panel} ${styles.evidencePanel}`}>
+        <h3>What makes a difference verifiable?</h3>
+        <ul className={styles.evidenceList}>
+          <li><span><Glyph name="file" size={14} /></span><span><strong>The exact document</strong><small>Policy wording and schedule for each option.</small></span></li>
+          <li><span><Glyph name="search" size={14} /></span><span><strong>The clause behind the detail</strong><small>Specific wording, not a general summary.</small></span></li>
+          <li><span><Glyph name="clock" size={14} /></span><span><strong>A verification date</strong><small>So you can see when the source was checked.</small></span></li>
+        </ul>
       </aside>
-    </div>
-    <section className="trail-panel paper-panel" id="trust"><div><h2>Every recommendation has a trail.</h2><p>Trace each answer to its source.<br />Know what was checked — and what still needs review.</p></div><div className="trail-links"><span><Glyph name="file" />Policy document</span><span><Glyph name="search" />Source clause</span><span><Glyph name="clock" />Verification date</span><span><Glyph name="shield" />Advisor review</span></div><Link className="trail-home" href="/intake" aria-label="Start your health insurance case"><Glyph size={35} /><span>Start your case ↗</span></Link></section>
-  </div>;
+    </section>
+
+    <section className={`${styles.panel} ${styles.statementPanel}`} aria-labelledby="statement-title">
+      <div className={styles.statementIntro}><p className={styles.panelKicker}>CHECK A STATEMENT</p><h2 id="statement-title">“I was told it’s covered.”</h2><p>Use this preview to see how a question is handled when the source is missing. It will not verify policy wording.</p></div>
+      <div>
+        <form className={styles.claimForm} onSubmit={(event) => { event.preventDefault(); setCheckedClaim(claim.trim()); }}>
+          <label htmlFor="agent-claim">What would you like to check?</label>
+          <textarea id="agent-claim" value={claim} onChange={(event) => { setClaim(event.target.value); setCheckedClaim(null); }} placeholder="For example: “A private room is included.”" maxLength={600} required />
+          <p className={styles.formHelp}>Preview only · Your text stays in this page and is not submitted.</p>
+          <button className={styles.submitButton} type="submit">Check the statement <Glyph name="arrow" size={15} /></button>
+        </form>
+        <div className={styles.claimResult} role="status"><Glyph name="file" size={19} /><div><strong>{checkedClaim ? "Source needed before an answer" : "Evidence comes first"}</strong><p>{checkedClaim ? "This statement has not been verified. Add the policy wording and source date before drawing a conclusion." : "No policy document is connected to this preview, so no policy-specific result can be shown."}</p></div>{checkedClaim && <blockquote>“{checkedClaim}”</blockquote>}</div>
+      </div>
+    </section>
+
+    <footer className={styles.trail}>
+      <div className={styles.trailCopy}><h2>A comparison should leave a trail.</h2><p>Keep each explanation connected to its source, clause, and verification date.</p></div>
+      <div className={styles.trailItems} aria-label="Evidence trail requirements"><div className={styles.trailItem}><Glyph name="file" size={17} /><span>Policy document</span></div><div className={styles.trailItem}><Glyph name="search" size={17} /><span>Source clause</span></div><div className={styles.trailItem}><Glyph name="clock" size={17} /><span>Checked date</span></div><div className={styles.trailItem}><Glyph name="shield" size={17} /><span>Review status</span></div></div>
+    </footer>
+  </main>;
 }

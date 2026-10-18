@@ -57,6 +57,8 @@ class SessionState(TypedDict, total=False):
     advisor_notification: dict[str, Any]
     output: dict[str, Any]
     target_language: str
+    input_status: str
+    input_rejection_code: str | None
 
 
 def create_initial_state(

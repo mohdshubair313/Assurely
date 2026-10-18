@@ -13,6 +13,7 @@ import LandingMotion from "./LandingMotion";
 import CoverageObservatory from "./CoverageObservatory";
 import ReflectiveSurface from "./ReflectiveSurface";
 import styles from "./LandingExperience.module.css";
+import { Folder } from "@/components/rareui/folder-component";
 
 const terms = [
   { id: "room", title: "Room rent", icon: "heart", question: "What happens if I choose a different room?", intro: "Start with the room-category clause. Then follow any linked conditions before drawing a conclusion.", checks: ["Allowed room categories", "Any daily limit", "Related deduction clauses"] },
@@ -61,7 +62,7 @@ export default function LandingExperience() {
     <CoverageObservatory />
 
     <section className={styles.decoder} id="policy-decoder" aria-labelledby="decoder-heading">
-      <div className={styles.decoderHeader} data-reveal><div><p className={styles.kicker}><span /> THE POLICY DECODER</p><h2 className={styles.heading} id="decoder-heading">Small clauses.<br /><em>Questions worth asking.</em></h2></div><p className={styles.lede}>Explore the details behind the headline.<br />Choose a term to open its question file.</p></div>
+      <div className={styles.decoderHeader} data-reveal><div><p className={styles.kicker}><span /> THE POLICY DECODER</p><h2 className={styles.heading} id="decoder-heading">Small clauses.<br /><em>Questions worth asking.</em></h2></div><div className={styles.decoderSide}><p className={styles.lede}>Explore the details behind the headline.<br />Choose a term to open its question file.</p><div className={styles.folderPreview}><Folder color="blue" size="sm" /><span>OPEN A SAMPLE POLICY FILE</span></div></div></div>
       <ReflectiveSurface className={styles.decoderPanel}>
         <div className={styles.decoderBar}><span><Glyph name="folder" size={18} /> YOUR COVER, UNDERSTOOD</span><Badge variant="warning" appearance="soft" size="md" shape="pill">Interactive preview</Badge></div>
         <Tabs defaultValue="room" size="md" activationMode="manual">

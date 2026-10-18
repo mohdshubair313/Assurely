@@ -22,8 +22,6 @@ from app.core.tracing import current_llm_metadata
 from app.db.session import AsyncSessionLocal
 from app.graph.state import SessionState
 from app.models.db.decision_trace import DecisionTrace
-from app.models.db.policy_document import PolicyDocument
-from app.models.db.policy_terms import PolicyTerms
 from app.models.db.session import Session as DBSession
 from app.models.db.user import User
 from app.models.db.user_profile_memory import UserProfileMemory
@@ -69,7 +67,9 @@ def _sources_per_claim(state: SessionState) -> dict[str, list[dict[str, Any]]]:
                 key: claim[key]
                 for key in (
                     "source", "url", "last_verified", "retrieved_at",
-                    "conflict", "version_hash",
+                    "conflict", "version_hash", "kind", "status", "as_of",
+                    "verification_scope", "policy_document_id", "policy_terms_id",
+                    "document_version_hash", "effective_date", "expiry_date",
                 )
                 if claim.get(key) is not None
             }
@@ -115,23 +115,40 @@ async def persist_memory_node(state: SessionState) -> dict[str, Any]:
         if owner_result.scalar_one() != user_id:
             raise ValueError("The session_id is already associated with another user_id")
 
-        policy_versions: list[dict[str, str]] = []
-        if state.get("draft_output", {}).get("stage") == "compare_verify":
-            stmt = (
-                select(PolicyTerms, PolicyDocument)
-                .join(PolicyDocument, PolicyTerms.policy_document_id == PolicyDocument.id)
-                .where(PolicyTerms.expiry_date.is_(None))
-            )
-            result = await db.execute(stmt)
-            policy_versions = [
-                {
-                    "policy_id": str(document.id),
-                    "product_name": document.product_name,
-                    "document_version_hash": document.version_hash,
-                    "terms_version_hash": terms.version_hash,
-                }
-                for terms, document in result.all()
-            ]
+        draft = state.get("draft_output", {})
+        policy_versions: list[dict[str, Any]] = []
+        if draft.get("stage") == "compare_verify":
+            # Record exactly the policy rows used by this turn. Re-querying only
+            # null-expiry rows loses archived status evidence and can capture
+            # policies that were never present in the generated comparison.
+            for item in draft.get("need_fit_view", []):
+                if not isinstance(item, dict):
+                    continue
+                policy_versions.append(
+                    {
+                        "policy_id": item.get("policy_document_id"),
+                        "policy_terms_id": item.get("policy_terms_id"),
+                        "product_name": item.get("product_name"),
+                        "document_version_hash": item.get("document_version_hash"),
+                        "terms_version_hash": item.get("version_hash"),
+                        "record_status": "active_comparison",
+                    }
+                )
+            for item in draft.get("cited_facts", []):
+                if not isinstance(item, dict) or item.get("kind") != "policy_record_status":
+                    continue
+                policy_versions.append(
+                    {
+                        "policy_id": item.get("policy_document_id"),
+                        "policy_terms_id": item.get("policy_terms_id"),
+                        "product_name": item.get("product_name"),
+                        "document_version_hash": item.get("document_version_hash"),
+                        "terms_version_hash": item.get("version_hash"),
+                        "record_status": item.get("status"),
+                        "as_of": item.get("as_of"),
+                        "verification_scope": item.get("verification_scope"),
+                    }
+                )
 
         llm_metadata = current_llm_metadata()
         profile = _json_safe(state.get("user_profile", {}))

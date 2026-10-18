@@ -14,6 +14,15 @@ all six rubric criteria (retrieval 1.00, generation 1.00), with Postgres/Langfus
 Other cases have not been evaluated under this report prompt. Do not merge the new case-04
 score into the older matrix: their pipeline fingerprints differ.
 
+**October 15 CASE05 status run:** the current status-only path uses deterministic
+`policy_terms` evidence and intentionally skips clause RAG. Rubric v4 records both clause
+retrieval criteria as not applicable for this path; generation and citation checks still
+run. The isolated run artifact `case05-isolated-rubric-v4-390a9954cf82.json` uses an
+explicitly synthetic expired record in the dedicated database
+`insurance_case05_eval_390a9954cf82`. Its judge candidate label is unreviewed and the data
+does not verify any real insurer product. Treat this as a targeted fixture result, not as
+the complete current-code eight-case matrix or a calibration result.
+
 Following your preference to run larger token-consuming batches yourself, run this **once**
 when ready. Keep Docker Desktop running. No `.env` edits or pasted keys are needed.
 

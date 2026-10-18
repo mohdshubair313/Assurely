@@ -10,7 +10,7 @@ from typing import Any
 
 import httpx
 
-RUBRIC_VERSION = "health-rubric-v3"
+RUBRIC_VERSION = "health-rubric-v4"
 JUDGE_MODEL = "nvidia/nemotron-3-super-120b-a12b:free"
 MAX_COMPLETION_TOKENS = 4096
 _SAFE_FINISH_REASONS = {"length", "content_filter", "stop", "tool_calls", "error"}
@@ -113,9 +113,17 @@ def build_packet(
     from eval.ragas_live import adapted_message
 
     early = case["id"] in EARLY_CASES
+    deterministic_status = any(item.get("kind") == "policy_record_status" for item in evidence)
     names = (
         ["appropriate_clarification", "no_premature_advice"]
         if early
+        else [
+            "question_answered",
+            "claims_grounded",
+            "profile_fidelity",
+            "scenario_handled",
+        ]
+        if deterministic_status
         else [
             "query_topic_coverage",
             "question_answered",
@@ -124,8 +132,19 @@ def build_packet(
             "scenario_handled",
         ]
     )
-    if reference and not early:
-        names.insert(1, "reference_clause_coverage")
+    not_applicable: dict[str, str] = {}
+    if early:
+        not_applicable["query_topic_coverage"] = "clarification"
+        not_applicable["reference_clause_coverage"] = "clarification"
+    elif deterministic_status:
+        reason = "policy_terms_database_lookup_no_clause_retrieval"
+        not_applicable["query_topic_coverage"] = reason
+        not_applicable["reference_clause_coverage"] = reason
+    else:
+        if reference:
+            names.insert(1, "reference_clause_coverage")
+        else:
+            not_applicable["reference_clause_coverage"] = "no_retrieval_reference"
     profile = state.get("user_profile") or {}
     return {
         "query": adapted_message(case),
@@ -149,6 +168,7 @@ def build_packet(
         "scenario_requirement": SCENARIOS.get(
             str(case.get("category") or ""), "Clarify the request."
         ),
+        "not_applicable_criteria": not_applicable,
         "rubric": {
             n: {"pass_condition": CRITERIA[n][1], "failure_code": CRITERIA[n][2]} for n in names
         },

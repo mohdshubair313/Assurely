@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import logging
 import uuid
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from langchain_core.runnables import RunnableConfig
@@ -23,6 +23,7 @@ from app.core.tracing import request_trace
 from app.db.session import AsyncSessionLocal
 from app.graph.build_graph import build_graph
 from app.graph.state import create_initial_state
+from app.guardrails.pii_scrub import scrub_pii
 from app.models.db.consent_record import ConsentRecord
 from app.models.db.user_profile_memory import UserProfileMemory
 
@@ -36,8 +37,8 @@ _app_graph = build_graph()
 class MessageRequest(BaseModel):
     session_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     user_id: uuid.UUID | None = None
-    user_message: str
-    target_language: str = "en"
+    user_message: str = Field(min_length=1, max_length=4000)
+    target_language: Literal["en", "hi", "hi-en-mixed"] | None = None
 
 
 class MessageResponse(BaseModel):
@@ -66,6 +67,13 @@ def build_message_response(session_id: str, state: dict[str, Any]) -> MessageRes
     Never edit graph output to hide it. Redact only this public response. Missing
     gate/approval fields fail closed; queue acknowledgement cannot authorize release.
     """
+    if state.get("input_status") == "rejected":
+        return MessageResponse(
+            session_id=session_id,
+            reply="I can help with health insurance questions. Please rephrase your message.",
+            delivery_hold=True,
+        )
+
     notification = state.get("advisor_notification", {})
     status = notification.get("status", "not_requested")
     if status not in {"not_requested", "queued", "failed", "unconfigured"}:
@@ -209,7 +217,9 @@ async def send_message(
                     )
                 # Multi-turn continuation: append user message to existing state
                 prev_messages = list(current_checkpoint.values.get("messages", []))
-                new_messages = prev_messages + [{"role": "user", "content": req.user_message}]
+                new_messages = prev_messages + [
+                    {"role": "user", "content": scrub_pii(req.user_message)}
+                ]
                 # Reset prior approval if intake/intent exits before the delivery gate.
                 input_state: dict[str, Any] = {
                     "messages": new_messages,
@@ -222,11 +232,11 @@ async def send_message(
                 input_state = dict(
                     create_initial_state(
                         session_id=req.session_id,
-                        user_message=req.user_message,
+                        user_message=scrub_pii(req.user_message),
                         user_id=str(user_id) if user_id else None,
                         consent=consent,
                         user_profile=saved_profile,
-                        target_language=req.target_language,
+                        target_language=req.target_language or "",
                     )
                 )
             if turn is not None:

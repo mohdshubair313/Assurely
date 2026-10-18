@@ -1,14 +1,37 @@
-"""Injection screening — detects prompt injection in user input.
+"""Deterministic screening for common direct prompt-injection directives."""
 
-Used by input_validate as the first line of defense (distributed
-guardrail — AGENTS.md rule 3).
+from __future__ import annotations
 
-Screens for:
-  - Direct prompt injection attempts (instructions to ignore system prompt)
-  - Jailbreak patterns
-  - Role-play manipulation attempts
-  - Encoded/obfuscated instruction injection
+import re
 
-Suspicious inputs are flagged and may trigger escalation
-rather than being silently processed.
-"""
+_DIRECTIVE_PATTERNS = (
+    re.compile(
+        r"\bignore\b.{0,50}\b(previous|prior|above|system|developer)\b"
+        r".{0,30}\b(instructions?|prompts?)\b",
+        re.I,
+    ),
+    re.compile(
+        r"\b(reveal|print|show|repeat|expose)\b.{0,40}\b(system|developer)\s+"
+        r"(prompt|message|instructions?)\b",
+        re.I,
+    ),
+    re.compile(
+        r"\b(you are now|act as|pretend to be)\b.{0,50}\b"
+        r"(unrestricted|jailbreak|DAN|system|developer)\b",
+        re.I,
+    ),
+    re.compile(
+        r"\b(disable|bypass|override)\b.{0,30}\b"
+        r"(safety|guardrails?|policy|restrictions?)\b",
+        re.I,
+    ),
+)
+
+
+def contains_prompt_injection(text: str) -> bool:
+    """Return true for common directive-shaped override attempts.
+
+    This is a narrow deterministic screen, not a claim that all hostile content
+    can be detected. Policy-document ingestion screening remains separate.
+    """
+    return any(pattern.search(text) is not None for pattern in _DIRECTIVE_PATTERNS)

@@ -1,248 +1,131 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
-import SectionContainer from "@/components/ui/SectionContainer";
-import Card from "@/components/ui/Card";
 import Button from "@/components/ui/Button";
 import ProgressPath from "@/components/ui/ProgressPath";
-
-/**
- * Guided Intake page — from Stitch export.
- *
- * design.md §8.3:
- * Conversation-style intake (NOT a 40-field form).
- * Collects: family, priorities, budget, existing cover.
- * Cross-checked with backend needs_intake state:
- *   - missing_fields: age, city_tier, dependents, pre_existing_conditions
- */
+import styles from "./intake.module.css";
 
 const intakeSteps = [
-  { label: "Family", key: "family" },
-  { label: "Priorities", key: "priorities" },
-  { label: "Budget", key: "budget" },
-  { label: "Existing cover", key: "existing" },
+  { label: "Your household", eyebrow: "01 / WHO NEEDS COVER?" },
+  { label: "Your priorities", eyebrow: "02 / WHAT MATTERS TO YOU?" },
+  { label: "Your budget", eyebrow: "03 / WHAT FEELS COMFORTABLE?" },
+  { label: "Existing cover", eyebrow: "04 / WHERE ARE YOU STARTING?" },
 ] as const;
+
+const priorities = [
+  "Room choices without a room-rent limit",
+  "A shorter wait for pre-existing conditions",
+  "No co-payment, where available",
+  "Cashless hospitals near me",
+  "Day-care treatment cover",
+  "Restoration or recharge benefit",
+  "Maternity and newborn cover",
+  "Cover for non-medical items",
+];
+
+const budgets = [
+  "Under ₹15,000 a year",
+  "₹15,000–₹25,000 a year",
+  "₹25,000–₹40,000 a year",
+  "₹40,000–₹60,000 a year",
+  "Above ₹60,000 a year",
+  "I’m still exploring the cost",
+];
+
+const coverOptions = [
+  { value: "retail", label: "Yes, I have an active health policy" },
+  { value: "employer", label: "I have cover through my employer" },
+  { value: "none", label: "No, this would be my first policy" },
+  { value: "unsure", label: "I’m not sure about my current cover" },
+];
+
+function StepContent({ step }: { step: number }) {
+  if (step === 1) {
+    return <>
+      <div className={styles.stepIntro}>
+        <span className={styles.stepEyebrow}>{intakeSteps[0].eyebrow}</span>
+        <h1 id="intake-heading">Who would you like to protect?</h1>
+        <p>A few starting details help shape a useful health-cover conversation.</p>
+      </div>
+      <div className={styles.fieldGrid}>
+        <label className={styles.field} htmlFor="adults"><span>Adults to cover</span><select id="adults" defaultValue=""><option value="" disabled>Select number</option><option value="1">1 adult</option><option value="2">2 adults</option><option value="3">3 adults</option></select></label>
+        <label className={styles.field} htmlFor="children"><span>Children to cover</span><select id="children" defaultValue=""><option value="" disabled>Select number</option><option value="0">No children</option><option value="1">1 child</option><option value="2">2 children</option><option value="3">3 children</option></select></label>
+        <label className={styles.field} htmlFor="eldest-age"><span>Age of the eldest member</span><input id="eldest-age" type="number" min="18" max="99" placeholder="For example, 34" /></label>
+        <label className={styles.field} htmlFor="city-tier"><span>Where would you seek treatment?</span><select id="city-tier" defaultValue=""><option value="" disabled>Select a city profile</option><option value="tier_1">Metro or major city</option><option value="tier_2">State capital or regional hub</option><option value="tier_3">Another town or city</option></select></label>
+      </div>
+    </>;
+  }
+
+  if (step === 2) {
+    return <>
+      <div className={styles.stepIntro}>
+        <span className={styles.stepEyebrow}>{intakeSteps[1].eyebrow}</span>
+        <h1 id="intake-heading">What matters most to you?</h1>
+        <p>Choose any details you would want to understand while reviewing a policy.</p>
+      </div>
+      <div className={styles.optionGrid}>{priorities.map((priority, index) => <label className={styles.checkOption} key={priority}><input type="checkbox" /><span className={styles.optionIndex}>{String(index + 1).padStart(2, "0")}</span><span>{priority}</span><span className={styles.checkMark} aria-hidden="true">+</span></label>)}</div>
+    </>;
+  }
+
+  if (step === 3) {
+    return <>
+      <div className={styles.stepIntro}>
+        <span className={styles.stepEyebrow}>{intakeSteps[2].eyebrow}</span>
+        <h1>What annual premium range feels comfortable?</h1>
+        <p>This is a guide to your preferences. Any premium figures need to be checked against verified policy details.</p>
+      </div>
+      <div className={styles.radioStack}>{budgets.map((budget) => <label className={styles.radioOption} key={budget}><input type="radio" name="budget" /><span className={styles.radioDot} aria-hidden="true" /><span>{budget}</span></label>)}</div>
+    </>;
+  }
+
+  return <>
+    <div className={styles.stepIntro}>
+      <span className={styles.stepEyebrow}>{intakeSteps[3].eyebrow}</span>
+      <h1>Are you already covered?</h1>
+      <p>Knowing where you are starting can help frame the questions to explore next.</p>
+    </div>
+    <div className={styles.radioStack}>{coverOptions.map((option) => <label className={styles.radioOption} key={option.value}><input type="radio" name="existing-cover" /><span className={styles.radioDot} aria-hidden="true" /><span>{option.label}</span></label>)}</div>
+  </>;
+}
 
 export default function IntakePage() {
   const [currentStep, setCurrentStep] = useState(1);
 
-  return (
-    <SectionContainer className="py-8 lg:py-12">
-      <div className="max-w-2xl mx-auto space-y-8">
-        {/* Progress Path */}
-        <ProgressPath
-          currentStep={currentStep}
-          totalSteps={intakeSteps.length}
-          labels={intakeSteps.map((s) => s.label)}
-        />
+  return <section className={styles.page} aria-labelledby="page-title">
+    <div className={styles.ambient} aria-hidden="true" />
+    <div className={styles.shell}>
+      <header className={styles.pageHeader}>
+        <div className={styles.headerMark}><span className={styles.markIcon} aria-hidden="true">A</span><span>HEALTH COVER <small>A GUIDED STARTING POINT</small></span></div>
+        <Link href="/" className={styles.exitLink}>Back to the overview <span aria-hidden="true">↗</span></Link>
+      </header>
 
-        {/* Step content */}
-        <Card variant="raised" className="p-6 lg:p-8 shadow-card">
-          {currentStep === 1 && (
-            <div className="space-y-6">
-              <div>
-                <h1 className="text-h3 font-body text-ink mb-2">
-                  Let&apos;s start with who needs cover
-                </h1>
-                <p className="text-sm font-body text-ink-muted">
-                  This helps us calculate the baseline sum insured without guesswork.
-                </p>
-              </div>
-
-              <div className="space-y-4">
-                <div>
-                  <label htmlFor="adults" className="block text-sm font-medium font-body text-ink mb-1.5">
-                    Number of adults
-                  </label>
-                  <select
-                    id="adults"
-                    defaultValue="2"
-                    className="w-full px-4 py-2.5 rounded-input border border-line bg-surface text-ink font-body transition-theme focus:ring-2 focus:ring-harbor focus:border-harbor"
-                  >
-                    <option value="1">1 adult</option>
-                    <option value="2">2 adults</option>
-                    <option value="3">3 adults</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label htmlFor="children" className="block text-sm font-medium font-body text-ink mb-1.5">
-                    Number of children
-                  </label>
-                  <select
-                    id="children"
-                    defaultValue="1"
-                    className="w-full px-4 py-2.5 rounded-input border border-line bg-surface text-ink font-body transition-theme focus:ring-2 focus:ring-harbor focus:border-harbor"
-                  >
-                    <option value="0">No children</option>
-                    <option value="1">1 child</option>
-                    <option value="2">2 children</option>
-                    <option value="3">3 children</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label htmlFor="eldest-age" className="block text-sm font-medium font-body text-ink mb-1.5">
-                    Age of eldest member
-                  </label>
-                  <input
-                    id="eldest-age"
-                    type="number"
-                    min="18"
-                    max="99"
-                    placeholder="34"
-                    className="w-full px-4 py-2.5 rounded-input border border-line bg-surface text-ink font-body placeholder:text-ink-muted transition-theme focus:ring-2 focus:ring-harbor focus:border-harbor"
-                  />
-                </div>
-
-                <div>
-                  <label htmlFor="city-tier" className="block text-sm font-medium font-body text-ink mb-1.5">
-                    Primary city / treatment tier
-                  </label>
-                  <select
-                    id="city-tier"
-                    defaultValue="tier_1"
-                    className="w-full px-4 py-2.5 rounded-input border border-line bg-surface text-ink font-body transition-theme focus:ring-2 focus:ring-harbor focus:border-harbor"
-                  >
-                    <option value="tier_1">Tier 1 (Metro: Bengaluru, Delhi NCR, Mumbai, Chennai)</option>
-                    <option value="tier_2">Tier 2 (State Capitals & Major Hubs)</option>
-                    <option value="tier_3">Tier 3 / Other</option>
-                  </select>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {currentStep === 2 && (
-            <div className="space-y-6">
-              <div>
-                <h1 className="text-h3 font-body text-ink mb-2">
-                  What matters most to you?
-                </h1>
-                <p className="text-sm font-body text-ink-muted">
-                  Select priorities — this configures deterministic need-fit filtering.
-                </p>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {[
-                  "No room-rent sub-limit (single private room)",
-                  "Short waiting period for pre-existing disease",
-                  "Zero co-payment penalty",
-                  "Broad cashless hospital network in my city",
-                  "Day-care procedure coverage (cataract, chemo)",
-                  "Restoration / recharge benefit",
-                  "Maternity & newborn cover rider",
-                  "Consumables & non-medical items cover",
-                ].map((priority) => (
-                  <label
-                    key={priority}
-                    className="flex items-center gap-3 p-3 rounded-card border border-line bg-surface hover:border-harbor cursor-pointer transition-theme"
-                  >
-                    <input type="checkbox" className="accent-harbor w-4 h-4" />
-                    <span className="text-sm font-body text-ink">{priority}</span>
-                  </label>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {currentStep === 3 && (
-            <div className="space-y-6">
-              <div>
-                <h1 className="text-h3 font-body text-ink mb-2">
-                  What&apos;s your annual premium budget?
-                </h1>
-                <p className="text-sm font-body text-ink-muted">
-                  Annual premium budget per household — we verify premiums against rate tables.
-                </p>
-              </div>
-
-              <div className="space-y-3">
-                {[
-                  "Under ₹15,000 / year",
-                  "₹15,000 – ₹25,000 / year",
-                  "₹25,000 – ₹40,000 / year",
-                  "₹40,000 – ₹60,000 / year",
-                  "Above ₹60,000 / year",
-                  "Show optimal need-fit regardless of budget",
-                ].map((range) => (
-                  <label
-                    key={range}
-                    className="flex items-center gap-3 p-3 rounded-card border border-line bg-surface hover:border-harbor cursor-pointer transition-theme"
-                  >
-                    <input type="radio" name="budget" className="accent-harbor w-4 h-4" />
-                    <span className="text-sm font-body text-ink">{range}</span>
-                  </label>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {currentStep === 4 && (
-            <div className="space-y-6">
-              <div>
-                <h1 className="text-h3 font-body text-ink mb-2">
-                  Do you have existing health cover?
-                </h1>
-                <p className="text-sm font-body text-ink-muted">
-                  Helps identify waiting-period credit portability under IRDAI guidelines.
-                </p>
-              </div>
-
-              <div className="space-y-3">
-                {[
-                  { value: "yes", label: "Yes — I hold an active retail health policy" },
-                  { value: "employer", label: "Only through employer group insurance (GMC)" },
-                  { value: "no", label: "No — this will be my household's first policy" },
-                  { value: "unsure", label: "I am not sure of the current status" },
-                ].map((option) => (
-                  <label
-                    key={option.value}
-                    className="flex items-center gap-3 p-3 rounded-card border border-line bg-surface hover:border-harbor cursor-pointer transition-theme"
-                  >
-                    <input type="radio" name="existing-cover" className="accent-harbor w-4 h-4" />
-                    <span className="text-sm font-body text-ink">{option.label}</span>
-                  </label>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Navigation */}
-          <div className="flex items-center justify-between mt-8 pt-6 border-t border-line">
-            <Button
-              variant="ghost"
-              size="sm"
-              disabled={currentStep === 1}
-              onClick={() => setCurrentStep((s) => Math.max(1, s - 1))}
-            >
-              ← Back
-            </Button>
-
-            {currentStep < intakeSteps.length ? (
-              <Button
-                variant="primary"
-                size="sm"
-                onClick={() => setCurrentStep((s) => Math.min(intakeSteps.length, s + 1))}
-              >
-                Continue →
-              </Button>
-            ) : (
-              <a href="/comparison">
-                <Button variant="primary" size="sm">
-                  Generate Case File Comparison →
-                </Button>
-              </a>
-            )}
+      <div className={styles.layout}>
+        <aside className={styles.story}>
+          <span className={styles.storyLabel}><span /> A CLEARER START</span>
+          <h2 id="page-title">Your needs,<br /><em>before the fine print.</em></h2>
+          <p className={styles.storyCopy}>A thoughtful health-cover conversation starts with what matters in your life. We’ll use these steps to help organize the questions worth asking.</p>
+          <div className={styles.storyPath} aria-label="Four steps in this preview">
+            {intakeSteps.map((item, index) => <div className={`${styles.pathItem} ${currentStep === index + 1 ? styles.pathActive : ""} ${currentStep > index + 1 ? styles.pathComplete : ""}`} key={item.label}><span className={styles.pathNumber}>{currentStep > index + 1 ? "✓" : `0${index + 1}`}</span><span>{item.label}</span></div>)}
           </div>
-        </Card>
+          <div className={styles.storyNote}><span className={styles.noteSeal} aria-hidden="true">✳</span><p><strong>Take your time.</strong><br />You can move back and change your answers.</p></div>
+          <div className={styles.paperLines} aria-hidden="true"><span /><span /><span /></div>
+        </aside>
 
-        {/* Privacy note */}
-        <p className="text-xs font-mono text-ink-muted text-center">
-          🔒 Fiduciary privacy: Your inputs remain in your session. No insurer or broker receives this without explicit consent.
-        </p>
+        <div className={styles.formColumn}>
+          <div className={styles.formMeta}><span>YOUR COVER, YOUR WAY</span><span>STEP {String(currentStep).padStart(2, "0")} <i>/ 04</i></span></div>
+          <div className={styles.progressWrap}><ProgressPath currentStep={currentStep} totalSteps={intakeSteps.length} labels={intakeSteps.map((step) => step.label)} /></div>
+          <div className={styles.formCard} key={currentStep}>
+            <StepContent step={currentStep} />
+            <div className={styles.formFooter}>
+              <Button variant="ghost" size="md" disabled={currentStep === 1} onClick={() => setCurrentStep((step) => Math.max(1, step - 1))}>← Back</Button>
+              {currentStep < intakeSteps.length ? <Button variant="primary" size="md" onClick={() => setCurrentStep((step) => Math.min(intakeSteps.length, step + 1))}>Continue <span aria-hidden="true">→</span></Button> : <Link href="/comparison" className={styles.previewLink}>Open comparison preview <span aria-hidden="true">→</span></Link>}
+            </div>
+          </div>
+          <div className={styles.previewNotice}><span aria-hidden="true">✳</span><p><strong>Design preview.</strong> Please use fictional details here; this screen does not submit or save your answers.</p></div>
+        </div>
       </div>
-    </SectionContainer>
-  );
+      <footer className={styles.pageFoot}><span>HEALTH INSURANCE · INDIA</span><span>Clear questions make for a clearer conversation.</span></footer>
+    </div>
+  </section>;
 }

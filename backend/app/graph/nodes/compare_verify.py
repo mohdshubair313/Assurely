@@ -31,6 +31,7 @@ from typing import Any, cast
 from sqlalchemy import select
 
 from app.db.session import AsyncSessionLocal
+from app.graph.policy_status import build_policy_status_facts, policy_status_request, term_status
 from app.graph.state import SessionState
 from app.models.db.policy_document import PolicyDocument
 from app.models.db.policy_terms import PolicyTerms
@@ -380,18 +381,25 @@ async def compare_verify_node(state: SessionState) -> dict[str, Any]:
     policy_entries: list[dict[str, Any]] = []
     all_hidden_clauses: dict[str, list[dict[str, Any]]] = {}
     all_transparency_scores: dict[str, dict[str, Any]] = {}
+    as_of = datetime.now(UTC).date()
 
     async with AsyncSessionLocal() as db_session:
         stmt = (
             select(PolicyTerms, PolicyDocument)
             .join(PolicyDocument, PolicyTerms.policy_document_id == PolicyDocument.id)
-            .where(PolicyTerms.expiry_date.is_(None))  # active terms only
             .order_by(PolicyDocument.insurer)
         )
         result = await db_session.execute(stmt)
         rows: list[tuple[PolicyTerms, PolicyDocument]] = [
             cast(tuple[PolicyTerms, PolicyDocument], r) for r in result.all()
         ]
+
+    status_facts = build_policy_status_facts(
+        policy_status_request(state.get("messages", [])), rows, as_of
+    )
+    # Historical rows inform explicit status requests, never active comparison.
+    # Both endpoints are inclusive; a future expiry alone is not inactivity.
+    rows = [(terms, doc) for terms, doc in rows if term_status(terms, as_of) == "active"]
 
     if not rows:
         logger.warning("compare_verify: no active policy_terms rows found in DB")
@@ -438,6 +446,10 @@ async def compare_verify_node(state: SessionState) -> dict[str, Any]:
             fit_notes.append("No clauses directly conflict with stated profile at this time.")
 
         entry: dict[str, Any] = {
+            "policy_document_id": str(doc.id),
+            "policy_terms_id": str(terms.id),
+            "document_version_hash": str(doc.version_hash),
+            "version_hash": str(terms.version_hash),
             "insurer": doc.insurer,
             "product_name": doc.product_name,
             "eligible": eligible,
@@ -485,6 +497,7 @@ async def compare_verify_node(state: SessionState) -> dict[str, Any]:
         }
         for f in retrieved_facts
     ]
+    cited_facts.extend(status_facts)
 
     # ── Compose draft_output ──────────────────────────────────────────────────
     draft_output: dict[str, Any] = {

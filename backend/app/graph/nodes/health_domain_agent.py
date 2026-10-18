@@ -24,6 +24,10 @@ from app.rag.retriever import retrieve_health_facts
 logger = logging.getLogger(__name__)
 
 _WAITING_PERIOD = re.compile(r"\bwaiting[\s-]+periods?\b", re.IGNORECASE)
+_POLICY_STATUS = re.compile(
+    r"\b(?:active|expired?|expiry|validity|valid|inactive|discontinued|withdrawn|status)\b",
+    re.IGNORECASE,
+)
 _REQUEST = re.compile(
     r"\?|\b(?:what|how|which|why|when|where|explain|compare|tell me|show me)\b",
     re.IGNORECASE,
@@ -62,10 +66,20 @@ async def health_domain_agent_node(state: SessionState) -> dict[str, Any]:
     """
     user_profile = state.get("user_profile", {})
     session_id = state.get("session_id", "default_session")
+    scope_query = _latest_user_request(state.get("messages", []))
+
+    # Validity dates and archived status come from deterministic policy_terms
+    # lookups. RAG has no authoritative policy-status role, so an explicit
+    # status request must not collect unrelated clause snippets.
+    if scope_query and _POLICY_STATUS.search(scope_query):
+        logger.info(
+            "Health domain status request for session %s: clause retrieval skipped",
+            session_id,
+        )
+        return {"retrieved_facts": []}
 
     # A requested clause topic is relevant regardless of the user's own PED status.
     request = _waiting_period_request(state.get("messages", []))
-    scope_query = _latest_user_request(state.get("messages", []))
     if request:
         queries = [request]
     else:
