@@ -115,7 +115,16 @@ async def persist_memory_node(state: SessionState) -> dict[str, Any]:
         if owner_result.scalar_one() != user_id:
             raise ValueError("The session_id is already associated with another user_id")
 
-        draft = state.get("draft_output", {})
+        # Rejection bypasses analysis. Previous checkpoints may still carry a
+        # report/evidence, which must not be attributed to this rejected turn.
+        # Keep that report internally intact: only explanation_report writes it.
+        input_rejected = state.get("input_status") == "rejected"
+        analysis: SessionState = {
+            "approved": False,
+            "escalation": False,
+            "confidence_inputs": {"status": "input_rejected"},
+        } if input_rejected else state
+        draft = analysis.get("draft_output", {})
         policy_versions: list[dict[str, Any]] = []
         if draft.get("stage") == "compare_verify":
             # Record exactly the policy rows used by this turn. Re-querying only
@@ -150,10 +159,13 @@ async def persist_memory_node(state: SessionState) -> dict[str, Any]:
                     }
                 )
 
-        llm_metadata = current_llm_metadata()
+        llm_metadata = (
+            {"model_version": None, "prompt_version": None}
+            if input_rejected else current_llm_metadata()
+        )
         profile = _json_safe(state.get("user_profile", {}))
-        confidence_inputs = _json_safe(state.get("confidence_inputs", {}))
-        if not confidence_inputs and state.get("confidence_score") is None:
+        confidence_inputs = _json_safe(analysis.get("confidence_inputs", {}))
+        if not confidence_inputs and analysis.get("confidence_score") is None:
             confidence_inputs = {"status": "guardrail_not_reached"}
         turn = current_turn.get()
         trace = DecisionTrace(
@@ -161,27 +173,35 @@ async def persist_memory_node(state: SessionState) -> dict[str, Any]:
             session_id=session_id,
             user_profile_snapshot_json=profile,
             policy_versions_evaluated_json=policy_versions,
-            clauses_retrieved_json=_json_safe(state.get("retrieved_facts", [])),
+            clauses_retrieved_json=_json_safe(analysis.get("retrieved_facts", [])),
             rules_engine_output_json=_json_safe(
                 {
-                    "calculator_outputs": state.get("calculator_outputs", {}),
-                    "hidden_clauses": state.get("hidden_clauses", []),
-                    "approved": state.get("approved"),
-                    "escalation": state.get("escalation"),
-                    "escalation_reason": state.get("escalation_reason"),
-                    "guardrail_notes": state.get("guardrail_notes", []),
-                    "report_status": state.get("output", {}).get("report_status"),
+                    "calculator_outputs": analysis.get("calculator_outputs", {}),
+                    "evidence_conflicts": analysis.get("draft_output", {}).get(
+                        "evidence_conflicts", []
+                    ),
+                    "hidden_clauses": analysis.get("hidden_clauses", []),
+                    "approved": analysis.get("approved"),
+                    "escalation": analysis.get("escalation"),
+                    "escalation_reason": analysis.get("escalation_reason"),
+                    "guardrail_notes": analysis.get("guardrail_notes", []),
+                    "report_status": "not_generated_input_rejected" if input_rejected
+                    else analysis.get("output", {}).get("report_status"),
+                    "input_validation": {
+                        "status": state.get("input_status", "not_recorded"),
+                        "rejection_code": state.get("input_rejection_code"),
+                    },
                     "correlation": turn.identifiers() if turn else {},
                 }
             ),
-            sources_per_claim_json=_json_safe(_sources_per_claim(state)),
+            sources_per_claim_json=_json_safe(_sources_per_claim(analysis)),
             model_version=llm_metadata["model_version"],
             prompt_version=llm_metadata["prompt_version"],
-            confidence_score=state.get("confidence_score"),
+            confidence_score=analysis.get("confidence_score"),
             confidence_inputs_json=confidence_inputs,
         )
         db.add(trace)
-        save_profile = _profile_memory_consent_granted(state)
+        save_profile = not input_rejected and _profile_memory_consent_granted(state)
         if save_profile:
             await db.execute(
                 insert(UserProfileMemory)

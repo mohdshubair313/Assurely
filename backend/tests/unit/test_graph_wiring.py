@@ -80,6 +80,7 @@ async def test_graph_execution_single_node() -> None:
             ),
         ),
         patch("app.graph.nodes.compare_verify.AsyncSessionLocal", return_value=mock_session),
+        patch("app.graph.nodes.health_domain_agent.retrieve_health_facts", return_value=[]),
         patch(
             "app.graph.build_graph.persist_memory_node",
             new=AsyncMock(return_value={"decision_trace_persisted": True}),

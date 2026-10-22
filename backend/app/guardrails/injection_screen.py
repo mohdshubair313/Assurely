@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 
 _DIRECTIVE_PATTERNS = (
     re.compile(
@@ -34,4 +35,8 @@ def contains_prompt_injection(text: str) -> bool:
     This is a narrow deterministic screen, not a claim that all hostile content
     can be detected. Policy-document ingestion screening remains separate.
     """
-    return any(pattern.search(text) is not None for pattern in _DIRECTIVE_PATTERNS)
+    # Normalize for screening only; preserve legitimate user wording for intake.
+    normalized = unicodedata.normalize("NFKC", text)
+    normalized = "".join(char for char in normalized if unicodedata.category(char) != "Cf")
+    normalized = " ".join(normalized.split())
+    return any(pattern.search(normalized) is not None for pattern in _DIRECTIVE_PATTERNS)

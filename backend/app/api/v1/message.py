@@ -23,7 +23,7 @@ from app.core.tracing import request_trace
 from app.db.session import AsyncSessionLocal
 from app.graph.build_graph import build_graph
 from app.graph.state import create_initial_state
-from app.guardrails.pii_scrub import scrub_pii
+from app.guardrails.input_validation import MAX_MESSAGE_CHARS, prepare_messages
 from app.models.db.consent_record import ConsentRecord
 from app.models.db.user_profile_memory import UserProfileMemory
 
@@ -37,7 +37,7 @@ _app_graph = build_graph()
 class MessageRequest(BaseModel):
     session_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     user_id: uuid.UUID | None = None
-    user_message: str = Field(min_length=1, max_length=4000)
+    user_message: str = Field(min_length=1, max_length=MAX_MESSAGE_CHARS)
     target_language: Literal["en", "hi", "hi-en-mixed"] | None = None
 
 
@@ -217,9 +217,9 @@ async def send_message(
                     )
                 # Multi-turn continuation: append user message to existing state
                 prev_messages = list(current_checkpoint.values.get("messages", []))
-                new_messages = prev_messages + [
-                    {"role": "user", "content": scrub_pii(req.user_message)}
-                ]
+                new_messages = prepare_messages(prev_messages + [
+                    {"role": "user", "content": req.user_message}
+                ])
                 # Reset prior approval if intake/intent exits before the delivery gate.
                 input_state: dict[str, Any] = {
                     "messages": new_messages,
@@ -232,13 +232,16 @@ async def send_message(
                 input_state = dict(
                     create_initial_state(
                         session_id=req.session_id,
-                        user_message=scrub_pii(req.user_message),
+                        user_message=None,
                         user_id=str(user_id) if user_id else None,
                         consent=consent,
                         user_profile=saved_profile,
                         target_language=req.target_language or "",
                     )
                 )
+                input_state["messages"] = prepare_messages([
+                    {"role": "user", "content": req.user_message}
+                ])
             if turn is not None:
                 turn.profile_snapshot = input_state.get("user_profile")
 

@@ -1,6 +1,7 @@
 """Exercise the actual Stage 3 to Stage 4 evidence and scoring contract."""
 
 from copy import deepcopy
+from datetime import date
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -26,7 +27,8 @@ async def projected_draft(
     terms.waiting_period_days_preexisting = None if incomplete else 1095
     terms.premium_rate_table_json = {} if incomplete else {"base_10L": {"age_18_35": 10000}}
     terms.exclusions_json = []
-    terms.effective_date = "2026-09-26"
+    terms.effective_date = date(2026, 9, 26)
+    terms.expiry_date = None
     doc = MagicMock(insurer="Synthetic insurer", product_name="Synthetic policy")
     db_result = MagicMock()
     db_result.all.return_value = [(terms, doc)]

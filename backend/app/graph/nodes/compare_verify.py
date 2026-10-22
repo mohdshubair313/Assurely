@@ -33,6 +33,7 @@ from sqlalchemy import select
 from app.db.session import AsyncSessionLocal
 from app.graph.policy_status import build_policy_status_facts, policy_status_request, term_status
 from app.graph.state import SessionState
+from app.graph.structured_conflicts import detect_structured_conflicts
 from app.models.db.policy_document import PolicyDocument
 from app.models.db.policy_terms import PolicyTerms
 
@@ -400,9 +401,14 @@ async def compare_verify_node(state: SessionState) -> dict[str, Any]:
     # Historical rows inform explicit status requests, never active comparison.
     # Both endpoints are inclusive; a future expiry alone is not inactivity.
     rows = [(terms, doc) for terms, doc in rows if term_status(terms, as_of) == "active"]
+    evidence_conflicts = detect_structured_conflicts(rows, as_of)
+    conflicted_documents = {item["policy_document_id"] for item in evidence_conflicts}
+    # No arbitrary current version wins. Preserve disagreeing records in the
+    # diagnostic evidence instead of publishing either as a usable comparison.
+    rows = [(terms, doc) for terms, doc in rows if str(doc.id) not in conflicted_documents]
 
     if not rows:
-        logger.warning("compare_verify: no active policy_terms rows found in DB")
+        logger.warning("compare_verify: no unambiguous active policy_terms rows available")
 
     for terms, doc in rows:
         policy_key = f"{doc.insurer}|{doc.product_name}"
@@ -498,6 +504,9 @@ async def compare_verify_node(state: SessionState) -> dict[str, Any]:
         for f in retrieved_facts
     ]
     cited_facts.extend(status_facts)
+    cited_facts.extend({
+        key: item[key] for key in ("claim", "source", "last_verified", "conflict")
+    } for item in evidence_conflicts)
 
     # ── Compose draft_output ──────────────────────────────────────────────────
     draft_output: dict[str, Any] = {
@@ -518,6 +527,7 @@ async def compare_verify_node(state: SessionState) -> dict[str, Any]:
         # explanation_report (Stage 5) will use this to produce prose for the user.
         "need_fit_view": policy_entries,
         "cited_facts": cited_facts,
+        "evidence_conflicts": evidence_conflicts,
         "total_policies_evaluated": len(policy_entries),
         "compliance_note": (
             "This output uses need-fit framing only. "

@@ -20,6 +20,7 @@ Tests:
 
 from __future__ import annotations
 
+from datetime import date
 from types import SimpleNamespace
 from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -429,7 +430,8 @@ def _make_terms_db_session() -> MagicMock:
     terms.sum_insured_max = 10000000
     terms.exclusions_json = ["Cosmetic surgery"]
     terms.premium_rate_table_json = {"base_5L": {"age_18_35": 8200}}
-    terms.effective_date = "2024-01-01"
+    terms.effective_date = date(2024, 1, 1)
+    terms.expiry_date = None
 
     doc = MagicMock()
     doc.insurer = "HDFC ERGO"
@@ -446,6 +448,14 @@ def _make_terms_db_session() -> MagicMock:
 
 class TestGuardrailGraphIntegration:
     """Integration test verifying LangGraph pipeline executes through Stage 4."""
+
+    @pytest.fixture(autouse=True)
+    def isolated_retrieval(self):
+        with patch("app.graph.nodes.health_domain_agent.retrieve_health_facts", return_value=[{
+            "claim": "Synthetic clause wording.", "source": "Synthetic policy",
+            "last_verified": "2026-10-21",
+        }]):
+            yield
 
     @pytest.mark.asyncio
     async def test_graph_executes_with_policies_passes_guardrail_without_escalation(self) -> None:

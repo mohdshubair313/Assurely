@@ -28,7 +28,7 @@ async def test_valid_message_is_scrubbed_and_language_detected() -> None:
     assert result["input_status"] == "accepted"
     assert result["target_language"] == "hi-en-mixed"
     assert "me@example.com" not in result["messages"][0]["content"]
-    assert "[EMAIL REDACTED]" in result["messages"][0]["content"]
+    assert "[EMAIL]" in result["messages"][0]["content"]
     assert route_after_input_validation({**state, **result}) == "continue_pipeline"
 
 
@@ -96,4 +96,4 @@ def test_api_masks_contact_data_before_graph_checkpoint() -> None:
     graph_input = graph.ainvoke.await_args.args[0]
     content = graph_input["messages"][0]["content"]
     assert "me@example.com" not in content
-    assert "[EMAIL REDACTED]" in content
+    assert "[EMAIL]" in content

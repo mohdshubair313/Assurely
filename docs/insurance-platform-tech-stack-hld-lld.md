@@ -140,6 +140,62 @@ class SessionState(TypedDict):
 9. `persist_memory` writes one decision trace on every completed turn, including rejected-input, early-return intake, and intent routes. Only the separate profile-memory upsert is gated by verified user identity and active `save_profile` consent.
 10. The API returns the result with per-claim source tags unless the escalation delivery hold applies.
 
+#### Rejected-input isolation (maintenance, 2026-10-21)
+
+The message API and `input_validate` share deterministic screening. Before an API
+turn is submitted to the graph/checkpointer, rejected text is replaced with a
+neutral placeholder and a server-written `input_rejection_code` on that message.
+This per-message marker survives later turns; a valid follow-up cannot replay the
+rejected instructions through intent classification or report context. Existing
+history is screened again when preparing a continuation. Older historical
+checkpoints are not retroactively erased by this change. Direct graph callers
+must apply the same preparation before invocation if their checkpointer retains
+the initial input snapshot; the entry node protects subsequent execution.
+
+Malformed graph message structures fail closed. Entry validation revokes prior
+approval and sets the delivery hold, without writing `output`. Rejected turns
+still reach `persist_memory`, but their audit record identifies input rejection,
+has no evaluated policies, retrieved clauses, report status from a prior turn, or
+confidence score, and does not update saved profile memory. Existing reports are
+not mutated. Rejection classification is stored inside the existing audit JSONB;
+no table migration or graph-edge change is needed for this maintenance.
+
+Direct-injection matching normalizes whitespace, compatibility characters and
+invisible formatting for screening only. It remains a limited pattern screen,
+not semantic attack detection. Compact PII placeholders never increase message
+length, keeping a valid 4,000-character input valid on repeated sanitization.
+
+Run focused checks without dotenv loading or inherited service credentials via
+`python -m tests.run_offline <pytest paths/options>`. This is a test launcher,
+not application configuration. Service boundaries remain mocked; Linux Docker
+is required for tests that exercise startup's restricted filesystem logging.
+
+#### Concurrent structured-record contradictions (maintenance, 2026-10-21)
+
+`compare_verify` compares concurrently active `policy_terms` rows belonging to the
+same `policy_documents.id`. It checks explicit sum-insured limits, entry ages,
+pre-existing-condition waiting days, normalized exclusion lists, and premiums at
+identical bracket/age keys. Missing values and disjoint rate keys are not evidence
+of disagreement. Historical/future/invalid windows are excluded; dates remain
+inclusive. Different document IDs are not conflated by insurer/product name, and
+the current schema provides no plan-variant identity for broader matching.
+
+Disagreeing documents are excluded from `need_fit_view`; neither version wins
+arbitrarily. `draft_output.evidence_conflicts` retains field names, normalized
+values, row/document IDs, version hashes, validity windows and lookup provenance.
+The lookup date verifies database consistency only, not insurer-source accuracy.
+Sourced diagnostic claims remain available for report generation. Any such conflict
+causes `guardrail` to withhold approval and require advisor review independently
+of the confidence score. Existing `explanation_report` then `escalate` execution
+still generates the report and holds delivery. The audit's existing
+`rules_engine_output_json.evidence_conflicts` stores the diagnostics; rejected
+turns do not inherit them. No database migration, state field or graph edge changed.
+
+This is a conservative consistency check within one document, not semantic
+contradiction detection across RAG text, different documents or different sources.
+Confidence calibration, semantic support checks and authoritative source approval
+remain separate work.
+
 #### Stored policy-version status (CASE05 maintenance, 2026-10-15)
 
 An explicit policy-validity question requires a separate deterministic lookup of the

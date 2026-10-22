@@ -228,6 +228,7 @@ def test_post_message_endpoint() -> None:
                 ),
             ),
             patch("app.graph.nodes.compare_verify.AsyncSessionLocal", return_value=db_session),
+            patch("app.graph.nodes.health_domain_agent.retrieve_health_facts", return_value=[]),
             patch("app.graph.nodes.persist_memory.AsyncSessionLocal", return_value=db_session),
             patch("app.api.v1.message.AsyncSessionLocal", return_value=db_session),
         ):

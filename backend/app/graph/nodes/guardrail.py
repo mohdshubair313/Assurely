@@ -475,6 +475,12 @@ async def guardrail_node(state: SessionState) -> dict[str, Any]:
     guardrail_notes: list[str] = []
     all_violations: list[str] = []
 
+    # A completeness score cannot authorize release of contradictory DB terms.
+    # compare_verify supplies this diagnostic independently of clause RAG.
+    if draft_output.get("evidence_conflicts"):
+        all_violations.append("Conflicting active policy records require advisor review.")
+        guardrail_notes.append("FAILED structured evidence consistency check.")
+
     # 1. Scan draft_output text for prohibited ranking language & unlicensed advice
     text_violations = _scan_text_fields(draft_output)
     if text_violations:

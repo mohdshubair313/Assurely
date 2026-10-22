@@ -6,10 +6,8 @@ import re
 from typing import Any
 
 from app.graph.state import SessionState
-from app.guardrails.injection_screen import contains_prompt_injection
-from app.guardrails.pii_scrub import scrub_pii
+from app.guardrails.input_validation import REJECTION_KEY, prepare_messages
 
-MAX_MESSAGE_CHARS = 4000
 _HINGLISH_MARKERS = re.compile(r"\b(kya|hai|nahi|mujhe|mera|meri|aap|kaise|chahiye)\b", re.I)
 
 
@@ -28,42 +26,20 @@ def _detect_language(text: str) -> str:
 
 async def input_validate_node(state: SessionState) -> dict[str, Any]:
     """Fail closed on malformed/hostile turns and scrub user text before use."""
-    messages = list(state.get("messages", []))
-    user_indices = [i for i, msg in enumerate(messages) if msg.get("role") == "user"]
-    if not user_indices:
-        return {"input_status": "rejected", "input_rejection_code": "missing_user_message"}
-
-    latest = messages[user_indices[-1]].get("content")
-    sanitized = [
-        {**msg, "content": scrub_pii(msg["content"])}
-        if msg.get("role") == "user" and isinstance(msg.get("content"), str)
-        else msg
-        for msg in messages
-    ]
-    if not isinstance(latest, str) or not latest.strip():
-        return {
-            "messages": sanitized,
-            "input_status": "rejected",
-            "input_rejection_code": "empty_message",
-        }
-    if len(latest) > MAX_MESSAGE_CHARS:
-        return {
-            "messages": sanitized,
-            "input_status": "rejected",
-            "input_rejection_code": "message_too_long",
-        }
-    if contains_prompt_injection(latest):
-        return {
-            "messages": sanitized,
-            "input_status": "rejected",
-            "input_rejection_code": "unsafe_directive",
-        }
+    sanitized = prepare_messages(state.get("messages", []))
+    latest = sanitized[-1]
+    code = latest.get(REJECTION_KEY)
+    updates: dict[str, Any] = {
+        "messages": sanitized,
+        "input_status": "rejected" if code else "accepted",
+        "input_rejection_code": code,
+        "approved": False,
+        "delivery_hold": True,
+    }
+    if code:
+        return updates
     language = state.get("target_language")
     if language not in {"en", "hi", "hi-en-mixed"}:
-        language = _detect_language(latest)
-    return {
-        "messages": sanitized,
-        "input_status": "accepted",
-        "input_rejection_code": None,
-        "target_language": language,
-    }
+        language = _detect_language(latest["content"])
+    updates["target_language"] = language
+    return updates
