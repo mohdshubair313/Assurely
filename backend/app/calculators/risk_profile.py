@@ -36,7 +36,7 @@ def calculate_risk_profile(user_profile: dict[str, Any]) -> dict[str, Any]:
     )
     base_net = base_sizing.get("net_recommended_sum_insured_inr", 1_000_000)
 
-    # 2. Medical inflation projection (14% p.a. Indian healthcare inflation benchmark)
+    # Unverified development scenario, not an established medical-cost forecast.
     inflation_rate = 0.14
     five_year_multiplier = round((1.0 + inflation_rate) ** 5, 2)  # ~1.93x
     projected_5yr_cost = int(base_net * five_year_multiplier)
@@ -47,19 +47,19 @@ def calculate_risk_profile(user_profile: dict[str, Any]) -> dict[str, Any]:
 
     # 4. Pre-existing condition risk factor
     ped_risk_category = "High" if has_ped else "Standard"
-    ped_waiting_period_months = 36  # Standard statutory benchmark
+    # A profile contains no policy schedule, rider or continuity-credit evidence.
+    ped_waiting_period_months = None
     ped_advice = (
-        "Out-of-pocket exposure exists during statutory 36-month waiting period; "
-        "consider reduced waiting period or restoration riders."
+        "Check the selected policy's pre-existing-condition waiting period, "
+        "optional reductions and continuity credits before assessing exposure."
         if has_ped
-        else "Standard statutory waiting period applies."
+        else "Waiting periods require the selected policy wording and schedule."
     )
 
     # 5. Room rent proportionate deduction risk
     room_rent_risk = (
-        "High risk of proportionate deductions if policy caps room rent at 1% of Sum Insured."
-        if base_net < 1_000_000
-        else "Sum insured sufficient for single private room without proportionate deductions."
+        "Room eligibility and proportionate deductions require the selected policy "
+        "wording and schedule; sum insured alone cannot determine them."
     )
 
     # 6. Risk-adjusted recommended sum insured
@@ -67,6 +67,7 @@ def calculate_risk_profile(user_profile: dict[str, Any]) -> dict[str, Any]:
 
     return {
         "calculator": "risk_analysis",
+        "assumptions_status": "unverified_development_only",
         "risk_adjusted_sum_insured_inr": risk_adjusted_sum_insured,
         "base_cover_inr": base_net,
         "projected_5yr_inr": projected_5yr_cost,

@@ -27,7 +27,7 @@ def calculate_health_cover_sizing(
 ) -> dict[str, Any]:
     """Calculate recommended health insurance sum insured deterministically.
 
-    All numbers follow Indian healthcare inflation & hospital cost benchmarks:
+    Unverified development assumptions, not validated hospital-cost benchmarks:
       - Tier 1 (Metros): base ₹10,00,000 (₹10 Lakhs)
       - Tier 2: base ₹7,50,000 (₹7.5 Lakhs)
       - Tier 3: base ₹5,00,000 (₹5 Lakhs)
@@ -64,6 +64,7 @@ def calculate_health_cover_sizing(
 
     return {
         "calculator": "health_cover_sizing",
+        "assumptions_status": "unverified_development_only",
         "city_tier": tier_label,
         "base_cover_inr": base_cover,
         "dependent_addon_inr": dependent_addon,

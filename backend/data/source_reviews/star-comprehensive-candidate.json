@@ -1,0 +1,161 @@
+{
+  "format_version": "policy-source-review-v1",
+  "insurer": "Star Health and Allied Insurance",
+  "product": "Star Comprehensive",
+  "review_status": "pending_human_review",
+  "sources": [
+    {
+      "id": "wording",
+      "url": "https://d28c6jni2fmamz.cloudfront.net/Policy_Star_Comprehensive_Insurance_Policy_V_21_3a414ab104.pdf",
+      "sha256": "b1dbe8fb78646f75566d47c32b7ebfa27c4071941c8f548224c461ee35a8021f",
+      "accessed_on": "2026-10-24",
+      "page_count": 48
+    },
+    {
+      "id": "prospectus",
+      "url": "https://d28c6jni2fmamz.cloudfront.net/Prospectus_Star_Comprehensive_Insurance_Policy_V_12_dc6058c95e.pdf",
+      "sha256": "0404693147bd5202e28e39bfdb8fcc87f78e7ee6aa6a6f1032f63cbec63698e1",
+      "accessed_on": "2026-10-26",
+      "page_count": 53
+    }
+  ],
+  "fields": [
+    {
+      "name": "uin",
+      "status": "extracted",
+      "proposed_value": "SHAHLIP26044V092526",
+      "unit": "text",
+      "references": [
+        {
+          "source_id": "wording",
+          "pdf_page": 2,
+          "clause": "Document identity",
+          "quote": "SHAHLIP26044V092526"
+        }
+      ],
+      "conditions": [],
+      "unresolved": [
+        "Pending human review"
+      ]
+    },
+    {
+      "name": "variant",
+      "status": "missing",
+      "unresolved": [
+        "Selected base plan, optional benefits and individual/floater schedule are not established."
+      ]
+    },
+    {
+      "name": "effective_date",
+      "status": "missing",
+      "unresolved": [
+        "Need archived source evidence of exact applicability date; PDF creation/access date is not policy effective date."
+      ]
+    },
+    {
+      "name": "expiry_date",
+      "status": "missing",
+      "unresolved": [
+        "No verified withdrawal/end date; missing does not mean open-ended validity."
+      ]
+    },
+    {
+      "name": "sum_insured_options",
+      "status": "extracted",
+      "proposed_value": "500000; 750000; 1000000; 1500000; 2000000; 2500000; 5000000; 7500000; 10000000",
+      "unit": "INR",
+      "references": [
+        {
+          "source_id": "prospectus",
+          "pdf_page": 3,
+          "clause": "Sum insured options",
+          "quote": "Rs.5,00,000 ; Rs.7,50,000 ; Rs.10,00,000 ; Rs.15,00,000 ; Rs.20,00,000 ; Rs.25,00,000 ; Rs.50,00,000 ; Rs.75,00,000 ; Rs.1,00,00,000"
+        }
+      ],
+      "conditions": [],
+      "unresolved": [
+        "Pending human review",
+        "Prospectus extraction contains unrelated SUPER STAR/placeholder-UIN headers alongside Comprehensive identity; physical PDF page 2 was visually checked and shows correct Comprehensive identity, but unrelated header is not visible there. Retain anomaly for human review and do not trust extracted header identity automatically."
+      ]
+    },
+    {
+      "name": "adult_entry_age_min",
+      "status": "extracted",
+      "proposed_value": "18",
+      "unit": "years",
+      "references": [
+        {
+          "source_id": "prospectus",
+          "pdf_page": 2,
+          "clause": "Eligibility",
+          "quote": "For Adults \u2013 18years \u2013 65 years"
+        }
+      ],
+      "conditions": [
+        "Adult entry only; child eligibility is separate."
+      ],
+      "unresolved": [
+        "Pending human review",
+        "Prospectus extraction contains unrelated SUPER STAR/placeholder-UIN headers alongside Comprehensive identity; physical PDF page 2 was visually checked and shows correct Comprehensive identity, but unrelated header is not visible there. Retain anomaly for human review and do not trust extracted header identity automatically."
+      ]
+    },
+    {
+      "name": "adult_entry_age_max",
+      "status": "extracted",
+      "proposed_value": "65",
+      "unit": "years",
+      "references": [
+        {
+          "source_id": "prospectus",
+          "pdf_page": 2,
+          "clause": "Eligibility",
+          "quote": "For Adults \u2013 18years \u2013 65 years"
+        }
+      ],
+      "conditions": [
+        "Adult entry only; child eligibility is separate."
+      ],
+      "unresolved": [
+        "Pending human review",
+        "Prospectus extraction contains unrelated SUPER STAR/placeholder-UIN headers alongside Comprehensive identity; physical PDF page 2 was visually checked and shows correct Comprehensive identity, but unrelated header is not visible there. Retain anomaly for human review and do not trust extracted header identity automatically."
+      ]
+    },
+    {
+      "name": "ped_waiting_period",
+      "status": "extracted",
+      "proposed_value": "36",
+      "unit": "calendar_months",
+      "references": [
+        {
+          "source_id": "wording",
+          "pdf_page": 31,
+          "clause": "III Standard Exclusions 1.A",
+          "quote": "expiry of 36 months of continuous coverage"
+        }
+      ],
+      "conditions": [
+        "Continuity credits, enhancement and disclosure/acceptance conditions apply."
+      ],
+      "unresolved": [
+        "Pending human review",
+        "Optional PED reduction requires separate schedule validation."
+      ]
+    },
+    {
+      "name": "exclusions",
+      "status": "missing",
+      "unresolved": [
+        "Full conditional exclusions and exceptions require reviewed structured extraction; no abbreviated unconditional list."
+      ]
+    },
+    {
+      "name": "premium_table",
+      "status": "missing",
+      "unresolved": [
+        "No complete applicable rate matrix verified with zone, age, family structure, tenure, taxes and options.",
+        "Base annual grid extracted from prospectus PDF pages 43-52: 400 rows / 3600 cells. Review artifact star-base-grid-candidate-20261026.json; complete usable tariff still requires zone mapping, eligibility and modifiers including PED buy-back on page 53.",
+        "Modifier evidence reviewed in docs/star-tariff-rules-review.md: zone lists, instalment and term rules, conditional discounts, PED option and underwriting. Premium field remains missing: tariff age basis, geographic resolution, modifier composition, rounding, taxes and applicability are not approved."
+      ]
+    }
+  ]
+}

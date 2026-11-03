@@ -23,13 +23,18 @@ RAG is used here ONLY for clause wording to explain in plain language.
 
 from __future__ import annotations
 
+import json
 import logging
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any, cast
 
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 
+from app.core.config import get_settings
+from app.db import reviewed_comparison
+from app.db.policy_review_store import WorkflowError
 from app.db.session import AsyncSessionLocal
 from app.graph.policy_status import build_policy_status_facts, policy_status_request, term_status
 from app.graph.state import SessionState
@@ -360,6 +365,40 @@ async def compare_verify_node(state: SessionState) -> dict[str, Any]:
     AGENTS.md rule 1: no ranking / "best" / "top" language anywhere in output.
     AGENTS.md rule 6: every claim carries source + last_verified.
     """
+    # The legacy projection loses discrete covers, calendar units and conditions.
+    # Until the report adapter consumes publication lookups, it cannot run outside
+    # development. Never silently project a scoped approval into all legacy terms.
+    settings = get_settings()
+    if settings.environment != "development":
+        blocked: dict[str, Any] = {
+            "draft_output": {
+                "stage": "compare_verify",
+                "publication_gate": "blocked",
+                "publication_gate_reason": "Reviewed conditional report adapter is required.",
+                "need_fit_view": [],
+                "cited_facts": [],
+                "evidence_conflicts": [],
+                "total_policies_evaluated": 0,
+            },
+            "hidden_clauses": [],
+            "transparency_scores": {},
+        }
+        raw = state.get("reviewed_comparison_request")
+        if raw is None:
+            return blocked
+        try:
+            request = reviewed_comparison.ComparisonRequest.model_validate_json(json.dumps(raw))
+            issuer = settings.auth_issuer.strip()
+            if not issuer:
+                return blocked
+            async with AsyncSessionLocal() as db, db.begin():
+                reviewed_result = await reviewed_comparison.compare_terms(db, issuer, request)
+            blocked["draft_output"]["reviewed_comparison"] = reviewed_result
+        except (ValueError, TypeError, SQLAlchemyError, WorkflowError):
+            # No raw policy/customer content or database details go into logs.
+            logger.warning("Reviewed policy comparison is unavailable for this turn")
+        # A comparison is not report generation or a delivery authorization.
+        return blocked
     session_id = state.get("session_id", "unknown")
     user_profile: dict[str, Any] = state.get("user_profile", {})
     retrieved_facts: list[dict[str, Any]] = state.get("retrieved_facts", [])
@@ -504,9 +543,10 @@ async def compare_verify_node(state: SessionState) -> dict[str, Any]:
         for f in retrieved_facts
     ]
     cited_facts.extend(status_facts)
-    cited_facts.extend({
-        key: item[key] for key in ("claim", "source", "last_verified", "conflict")
-    } for item in evidence_conflicts)
+    cited_facts.extend(
+        {key: item[key] for key in ("claim", "source", "last_verified", "conflict")}
+        for item in evidence_conflicts
+    )
 
     # ── Compose draft_output ──────────────────────────────────────────────────
     draft_output: dict[str, Any] = {

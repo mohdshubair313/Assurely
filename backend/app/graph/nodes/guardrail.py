@@ -475,6 +475,10 @@ async def guardrail_node(state: SessionState) -> dict[str, Any]:
     guardrail_notes: list[str] = []
     all_violations: list[str] = []
 
+    if draft_output.get("publication_gate") == "blocked":
+        all_violations.append("Reviewed policy publication is unavailable for this report.")
+        guardrail_notes.append("FAILED policy publication gate.")
+
     # A completeness score cannot authorize release of contradictory DB terms.
     # compare_verify supplies this diagnostic independently of clause RAG.
     if draft_output.get("evidence_conflicts"):

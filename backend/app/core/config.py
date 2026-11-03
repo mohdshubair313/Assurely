@@ -41,6 +41,13 @@ class Settings(BaseSettings):
     auth_audience: str = ""
     auth_jwks_url: str = ""
 
+    # Explicit operator-managed subjects under AUTH_ISSUER; no client role claim.
+    # Empty disables policy-review APIs. Never populated from customer profile data.
+    policy_reviewer_subjects: list[str] = Field(default_factory=list)
+    # Independent authority for publication/revocation; empty disables publication.
+    policy_publisher_subjects: list[str] = Field(default_factory=list)
+    advisor_subjects: list[str] = Field(default_factory=list)
+
     # ── Database ────────────────────────────────────────────────────────
     database_url: str = Field(
         default="postgresql+asyncpg://insurance:insurance_dev@localhost:5432/insurance_db",

@@ -36,7 +36,7 @@ async def get_session(
     ] = None,
 ) -> SessionDetailResponse:
     """Retrieve session audit state with ownership verification."""
-    from app.api.v1.message import _app_graph, build_message_response
+    from app.api.v1.message import _app_graph, build_delivery_response
 
     db_session_id = database_session_id(session_id)
     checkpoint = await _app_graph.aget_state({"configurable": {"thread_id": session_id}})
@@ -84,7 +84,7 @@ async def get_session(
     # Reuse the message endpoint's delivery gate so a held report cannot be
     # recovered through this secondary session-state read path.
     delivery_held = (
-        build_message_response(session_id, values).delivery_hold
+        (await build_delivery_response(session_id, values)).delivery_hold
         if has_checkpoint
         else True
     )

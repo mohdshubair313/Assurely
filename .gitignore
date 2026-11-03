@@ -59,3 +59,10 @@ Desktop.ini
 data/
 raw_docs/
 *.pdf
+
+# Curated public-source review metadata; raw policy files remain excluded.
+!/backend/data/
+/backend/data/*
+!/backend/data/source_reviews/
+/backend/data/source_reviews/*
+!/backend/data/source_reviews/*-candidate.json

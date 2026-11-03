@@ -42,7 +42,7 @@ def test_risk_profile_calculator_deterministic() -> None:
     assert result["calculator"] == "risk_analysis"
     assert result["tertiary_care_benchmark_inr"] == 1_500_000
     assert result["ped_risk_category"] == "High"
-    assert result["ped_waiting_period_months"] == 36
+    assert result["ped_waiting_period_months"] is None
     assert result["risk_adjusted_sum_insured_inr"] >= 1_500_000
     assert result["projected_5yr_inr"] > result["base_cover_inr"]
 

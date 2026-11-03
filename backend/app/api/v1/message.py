@@ -8,18 +8,25 @@ returns the response with citations and metadata per LLD § 7.5:
 
 from __future__ import annotations
 
+import json
 import logging
 import uuid
 from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from langchain_core.runnables import RunnableConfig
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
+from app.core.config import get_settings
 from app.core.correlation import current_turn, database_session_id
 from app.core.security import optional_authenticated_user_id, require_matching_user_id
 from app.core.tracing import request_trace
+from app.db import report_release
+from app.db.policy_review_store import WorkflowError
+from app.db.policy_rule_draft import _unique_object
+from app.db.reviewed_comparison import ComparisonRequest
+from app.db.reviewed_delivery import check_reviewed_delivery, is_reviewed
 from app.db.session import AsyncSessionLocal
 from app.graph.build_graph import build_graph
 from app.graph.state import create_initial_state
@@ -39,6 +46,8 @@ class MessageRequest(BaseModel):
     user_id: uuid.UUID | None = None
     user_message: str = Field(min_length=1, max_length=MAX_MESSAGE_CHARS)
     target_language: Literal["en", "hi", "hi-en-mixed"] | None = None
+    # Explicit user-supplied scenario, scoped to this turn. It is never approval.
+    reviewed_comparison_request: dict[str, Any] | None = None
 
 
 class MessageResponse(BaseModel):
@@ -91,6 +100,8 @@ def build_message_response(session_id: str, state: dict[str, Any]) -> MessageRes
         or state.get("escalation") is True
         or bool(notification)
         or not report_ready
+        # A checkpoint flag/status is never a reviewed-report release credential.
+        or is_reviewed(state)
     )
     missing = state.get("missing_fields", [])
     if held:
@@ -150,18 +161,53 @@ def build_message_response(session_id: str, state: dict[str, Any]) -> MessageRes
     )
 
 
+async def build_delivery_response(session_id: str, state: dict[str, Any]) -> MessageResponse:
+    """Recheck at each public read; never persist or reuse a freshness decision."""
+    settings = get_settings()
+    if is_reviewed(state) and state.get("input_status") != "rejected":
+        try:
+            async with AsyncSessionLocal() as db, db.begin():
+                check = await check_reviewed_delivery(db, settings.auth_issuer, state)
+                # No advisor authorization exists yet. Evidence consistency alone
+                # must never lift the hold or rewrite the generated report.
+                logger.info("Reviewed delivery check: %s", check.reason)
+                return build_message_response(session_id, state)
+        except Exception:
+            # Connection/transaction/lookup failures are not delivery permission.
+            logger.warning("Reviewed delivery verification unavailable")
+            return build_message_response(session_id, {**state, "delivery_hold": True})
+    if settings.environment != "development":
+        # Old development checkpoints cannot become production policy evidence.
+        return build_message_response(session_id, {**state, "delivery_hold": True})
+    return build_message_response(session_id, state)
+
+
 @router.post("/message", response_model=MessageResponse)
 async def send_message(
     req: MessageRequest,
-    authenticated_user_id: Annotated[
-        uuid.UUID | None, Depends(optional_authenticated_user_id)
-    ],
+    request: Request,
+    authenticated_user_id: Annotated[uuid.UUID | None, Depends(optional_authenticated_user_id)],
 ) -> MessageResponse:
     """Run a user turn through the LangGraph insurance advisor pipeline."""
     turn = current_turn.get()
     if turn is not None:
         turn.session_id = str(database_session_id(req.session_id))
     try:
+        # FastAPI's JSON decoder otherwise accepts duplicate scenario keys, which
+        # can make the input a different policy scenario than the caller intended.
+        try:
+            json.loads(await request.body(), object_pairs_hook=_unique_object)
+        except ValueError as exc:
+            raise HTTPException(422, "Invalid message request.") from exc
+        scenario: dict[str, Any] | None = None
+        if req.reviewed_comparison_request is not None:
+            try:
+                encoded = json.dumps(req.reviewed_comparison_request)
+                if len(encoded.encode("utf-8")) > 64 * 1024:
+                    raise ValueError("Scenario exceeds the input limit")
+                scenario = ComparisonRequest.model_validate_json(encoded).model_dump(mode="json")
+            except (ValueError, TypeError) as exc:
+                raise HTTPException(422, "Invalid reviewed comparison scenario.") from exc
         if req.user_id is not None:
             if authenticated_user_id is None:
                 raise HTTPException(status_code=401, detail="A verified bearer token is required.")
@@ -217,9 +263,9 @@ async def send_message(
                     )
                 # Multi-turn continuation: append user message to existing state
                 prev_messages = list(current_checkpoint.values.get("messages", []))
-                new_messages = prepare_messages(prev_messages + [
-                    {"role": "user", "content": req.user_message}
-                ])
+                new_messages = prepare_messages(
+                    prev_messages + [{"role": "user", "content": req.user_message}]
+                )
                 # Reset prior approval if intake/intent exits before the delivery gate.
                 input_state: dict[str, Any] = {
                     "messages": new_messages,
@@ -227,6 +273,8 @@ async def send_message(
                     "consent": consent,
                     "approved": False,
                     "delivery_hold": True,
+                    # Never reuse a previous turn's scenario implicitly.
+                    "reviewed_comparison_request": scenario,
                 }
             else:
                 input_state = dict(
@@ -239,19 +287,40 @@ async def send_message(
                         target_language=req.target_language or "",
                     )
                 )
-                input_state["messages"] = prepare_messages([
-                    {"role": "user", "content": req.user_message}
-                ])
+                input_state["messages"] = prepare_messages(
+                    [{"role": "user", "content": req.user_message}]
+                )
+                input_state["reviewed_comparison_request"] = scenario
             if turn is not None:
                 turn.profile_snapshot = input_state.get("user_profile")
 
-            final_state = await _app_graph.ainvoke(input_state, config=config)
+            settings = get_settings()
+            durable_turn = None
+            if settings.environment != "development":
+                async with AsyncSessionLocal() as db, db.begin():
+                    durable_turn = await report_release.begin_turn(
+                        db, settings.auth_issuer, req.session_id, user_id,
+                    )
+            try:
+                final_state = await _app_graph.ainvoke(input_state, config=config)
+                if durable_turn is not None:
+                    async with AsyncSessionLocal() as db, db.begin():
+                        await report_release.finish_turn(
+                            db, settings.auth_issuer, req.session_id, durable_turn, final_state,
+                        )
+            except Exception:
+                if durable_turn is not None:
+                    async with AsyncSessionLocal() as db, db.begin():
+                        await report_release.finish_turn(
+                            db, settings.auth_issuer, req.session_id, durable_turn, None,
+                        )
+                raise
             # Attach profile to turn context for PII scrubbing in exception logs.
             if turn is not None:
-                turn.profile_snapshot = (
-                    final_state.get("user_profile") or input_state.get("user_profile")
+                turn.profile_snapshot = final_state.get("user_profile") or input_state.get(
+                    "user_profile"
                 )
-            response = build_message_response(req.session_id, final_state)
+            response = await build_delivery_response(req.session_id, final_state)
             if trace is not None:
                 trace.update(
                     output={
@@ -264,6 +333,8 @@ async def send_message(
                 )
 
         return response
+    except WorkflowError as exc:
+        raise HTTPException(exc.status, str(exc)) from exc
     except HTTPException:
         raise
     except Exception as e:

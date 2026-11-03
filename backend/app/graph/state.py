@@ -39,6 +39,8 @@ class SessionState(TypedDict, total=False):
     user_id: str | None
     messages: list[dict[str, Any]]
     user_profile: dict[str, Any]
+    # Explicit scenario input for this turn; never inferred from profile fields.
+    reviewed_comparison_request: dict[str, Any] | None
     consent: dict[str, Any]
     intent: str | None
     missing_fields: list[str]
@@ -79,6 +81,7 @@ def create_initial_state(
         user_id=user_id,
         messages=messages,
         user_profile=dict(user_profile or {}),
+        reviewed_comparison_request=None,
         consent=consent or {"granted": False, "scopes": []},
         intent=None,
         missing_fields=["age", "city_tier", "dependents", "pre_existing_conditions"],

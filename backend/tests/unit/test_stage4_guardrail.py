@@ -485,7 +485,7 @@ class TestGuardrailGraphIntegration:
                 new=AsyncMock(
                     return_value=SimpleNamespace(
                         content=(
-                            '{"sentences":[{"text":"Sourced policy details are available.",'
+                            '{"sentences":[{"text":"Synthetic clause wording.",'
                             '"evidence_ids":["E1"]}]}'
                         ),
                         finish_reason="stop",
@@ -556,7 +556,7 @@ class TestGuardrailGraphIntegration:
                 new=AsyncMock(
                     return_value=SimpleNamespace(
                         content=(
-                            '{"sentences":[{"text":"Sourced policy details are available.",'
+                            '{"sentences":[{"text":"Synthetic clause wording.",'
                             '"evidence_ids":["E1"]}]}'
                         ),
                         finish_reason="stop",

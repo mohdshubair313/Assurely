@@ -77,6 +77,128 @@ def _sources_per_claim(state: SessionState) -> dict[str, list[dict[str, Any]]]:
     return sources
 
 
+def _pick(value: Any, keys: tuple[str, ...]) -> dict[str, Any]:
+    """Project known audit fields; never copy an entire scenario or state."""
+    if not isinstance(value, dict):
+        return {}
+    return {key: _json_safe(value[key]) for key in keys if value.get(key) is not None}
+
+
+def _references(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    return [
+        _pick(ref, ("source_id", "pdf_page", "clause", "quote", "url", "sha256"))
+        for ref in value if isinstance(ref, dict)
+    ]
+
+
+def _reviewed_provenance(
+    state: SessionState,
+) -> tuple[dict[str, Any] | None, list[dict[str, Any]], dict[str, list[dict[str, Any]]]]:
+    """Capture lookup-time evidence, never a release credential or fresh review.
+
+    Scenario inputs contain personal attributes and are intentionally excluded.
+    Immutable publication IDs locate the full policy scope; scope evidence is
+    retained separately from fact citations. No current-state DB lookup belongs
+    here: that would rewrite the evidence used by this particular graph turn.
+    """
+    draft = state.get("draft_output") or {}
+    comparison = draft.get("reviewed_comparison")
+    if (
+        state.get("input_status") == "rejected"
+        or state.get("missing_fields")
+        or state.get("intent") != "health"
+        or draft.get("stage") != "compare_verify"
+        or not isinstance(comparison, dict)
+        or comparison.get("scope") != "reviewed_graph_comparison"
+    ):
+        return None, [], {}
+    audit = _pick(comparison, ("status", "checked_at"))
+    audit.update(
+        scope="historical_reviewed_comparison",
+        requires_fresh_lookup=True,
+        customer_delivery_authorized=False,
+        scenario_inputs_recorded=False,
+        items=[],
+    )
+    versions: list[dict[str, Any]] = []
+    sources: dict[str, list[dict[str, Any]]] = {}
+    items = comparison.get("items")
+    for item_index, item in enumerate(items if isinstance(items, list) else []):
+        if not isinstance(item, dict):
+            continue
+        entry = _pick(item, ("publication_digest",))
+        entry["capabilities"] = []
+        capabilities = item.get("capabilities")
+        for cap_index, cap in enumerate(capabilities if isinstance(capabilities, list) else []):
+            if not isinstance(cap, dict):
+                continue
+            record = _pick(cap, (
+                "capability", "status", "reason", "checked_at", "expires_at",
+                "policy_terms_id", "storage_scope", "verification_scope",
+            ))
+            record["facts"] = []
+            entry["capabilities"].append(record)
+            # Unavailable results cannot carry leftover facts or review evidence.
+            if cap.get("status") != "available":
+                continue
+            scope = cap.get("scope_review") or {}
+            record["scope_review"] = _pick(scope, ("last_verified", "verification_event_id"))
+            if isinstance(scope, dict):
+                for key in ("applicability_evidence", "condition_evidence"):
+                    record["scope_review"][key] = _references(scope.get(key))
+                for key in ("identity_note_mappings", "condition_note_mappings"):
+                    mappings = scope.get(key)
+                    record["scope_review"][key] = [
+                        {**_pick(mapping, ("note_sha256", "disposition", "rationale")),
+                         "evidence": _references(mapping.get("evidence"))}
+                        for mapping in (mappings if isinstance(mappings, list) else [])
+                        if isinstance(mapping, dict)
+                    ]
+            versions.append({
+                **_pick(item, ("publication_digest",)),
+                **_pick(cap, ("policy_terms_id", "capability", "storage_scope")),
+                **_pick(scope, ("verification_event_id", "last_verified")),
+                "record_status": "historical_reviewed_lookup",
+            })
+            facts = cap.get("facts")
+            for fact_index, fact in enumerate(facts if isinstance(facts, list) else []):
+                if not isinstance(fact, dict):
+                    continue
+                saved = _pick(fact, (
+                    "name", "value", "last_verified", "verification_event_id", "policy_terms_id",
+                ))
+                saved["source"] = _references(fact.get("source"))
+                # Structural presence is not a new approval or source validation.
+                saved["provenance_complete"] = bool(
+                    saved.get("last_verified") and saved.get("verification_event_id")
+                    and saved.get("verification_event_id")
+                    == record["scope_review"].get("verification_event_id")
+                    and saved.get("last_verified") == record["scope_review"].get("last_verified")
+                    and saved.get("policy_terms_id") == cap.get("policy_terms_id")
+                    and saved.get("policy_terms_id") and saved["source"]
+                    and all(all(ref.get(k) for k in (
+                        "source_id", "pdf_page", "sha256", "url", "quote",
+                    ))
+                            for ref in saved["source"])
+                )
+                record["facts"].append(saved)
+                # Position + digest + capability prevent same-name facts from
+                # different policies/scopes overwriting one another.
+                key = (f"reviewed:{item_index}:{cap_index}:{fact_index}:"
+                       f"{item.get('publication_digest')}:{cap.get('capability')}:{fact.get('name')}")
+                sources[key] = [{
+                    **saved,
+                    "publication_digest": item.get("publication_digest"),
+                    "capability": cap.get("capability"),
+                    "scope_review": record["scope_review"],
+                    "evidence_role": "lookup_fact_not_generated_claim",
+                }]
+        audit["items"].append(entry)
+    return audit, versions, sources
+
+
 def _profile_memory_consent_granted(state: SessionState) -> bool:
     """Require an explicit identity and durable save_profile consent receipt."""
     consent = state.get("consent") or {}
@@ -125,6 +247,7 @@ async def persist_memory_node(state: SessionState) -> dict[str, Any]:
             "confidence_inputs": {"status": "input_rejected"},
         } if input_rejected else state
         draft = analysis.get("draft_output", {})
+        reviewed_audit, reviewed_versions, reviewed_sources = _reviewed_provenance(analysis)
         policy_versions: list[dict[str, Any]] = []
         if draft.get("stage") == "compare_verify":
             # Record exactly the policy rows used by this turn. Re-querying only
@@ -159,6 +282,9 @@ async def persist_memory_node(state: SessionState) -> dict[str, Any]:
                     }
                 )
 
+        policy_versions.extend(reviewed_versions)
+        sources = _sources_per_claim(analysis)
+        sources.update(reviewed_sources)
         llm_metadata = (
             {"model_version": None, "prompt_version": None}
             if input_rejected else current_llm_metadata()
@@ -177,9 +303,11 @@ async def persist_memory_node(state: SessionState) -> dict[str, Any]:
             rules_engine_output_json=_json_safe(
                 {
                     "calculator_outputs": analysis.get("calculator_outputs", {}),
+                    "reviewed_comparison": reviewed_audit,
                     "evidence_conflicts": analysis.get("draft_output", {}).get(
                         "evidence_conflicts", []
                     ),
+                    "claim_support": analysis.get("output", {}).get("claim_support"),
                     "hidden_clauses": analysis.get("hidden_clauses", []),
                     "approved": analysis.get("approved"),
                     "escalation": analysis.get("escalation"),
@@ -194,7 +322,7 @@ async def persist_memory_node(state: SessionState) -> dict[str, Any]:
                     "correlation": turn.identifiers() if turn else {},
                 }
             ),
-            sources_per_claim_json=_json_safe(_sources_per_claim(analysis)),
+            sources_per_claim_json=_json_safe(sources),
             model_version=llm_metadata["model_version"],
             prompt_version=llm_metadata["prompt_version"],
             confidence_score=analysis.get("confidence_score"),

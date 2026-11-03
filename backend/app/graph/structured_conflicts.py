@@ -69,13 +69,16 @@ def detect_structured_conflicts(
             continue
         by_field: dict[str, list[dict[str, Any]]] = defaultdict(list)
         for terms, doc in sorted(records, key=lambda row: str(row[0].id)):
+            effective = terms.effective_date
+            if type(effective) is not date:
+                continue  # Reviewed rows and malformed legacy records have no legacy date.
             for field, value in _fields(terms).items():
                 by_field[field].append({
                     "value": value,
                     "policy_terms_id": str(terms.id),
                     "terms_version_hash": str(terms.version_hash),
                     "document_version_hash": str(doc.version_hash),
-                    "effective_date": terms.effective_date.isoformat(),
+                    "effective_date": effective.isoformat(),
                     "expiry_date": terms.expiry_date.isoformat() if terms.expiry_date else None,
                     "source": f"policy_terms record {terms.id}",
                     "url": doc.doc_url or "",

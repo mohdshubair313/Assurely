@@ -13,6 +13,17 @@ from app.graph.state import SessionState
 from app.llm.providers import LLMResult
 
 
+@pytest.fixture(autouse=True)
+def isolated_support_verifier():
+    # This suite exercises report generation. Semantic verdict handling and
+    # failure cases are covered separately in test_claim_support.py.
+    with patch("app.graph.claim_support.llm_call", new=AsyncMock(return_value=LLMResult(
+        content='{"verdicts":[{"sentence_id":0,"verdict":"supported"}]}',
+        provider="mock", model="support-mock",
+    ))):
+        yield
+
+
 def _state(*, escalation: bool = False) -> SessionState:
     return SessionState(
         session_id="explanation-report-test",

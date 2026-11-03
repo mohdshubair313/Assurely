@@ -1,0 +1,35 @@
+{
+  "product_uin": "HDFHLIP26058V082526",
+  "variant": "Optima Secure Plan",
+  "sources": [
+    {"id": "wording", "sha256": "195eb0499db969c6789472e7f87ef1c72da110e2a8c7761ecb5add378fe964c1", "page_count": 69,
+     "url": "https://customer-portal-assets.hdfcergo.com/documents/PolicyWordings_myOptimaSecure-76673175551.pdf"},
+    {"id": "prospectus", "sha256": "ff924d405c28e256fada87ce0bfc0b63816f06e87e2d9e9fdd91e115f4a01d32", "page_count": 291,
+     "url": "https://customer-portal-assets.hdfcergo.com/documents/Prospectus_myOptimaSecure-81493430264.pdf"}
+  ],
+  "sections": [
+    {"id": "age_definition", "source_id": "wording", "first_page": 8, "last_page": 8,
+     "start": "Def. 2. Age means", "end": "Def. 3.", "purpose": "Age basis for policy-year lookup"},
+    {"id": "discounts", "source_id": "prospectus", "first_page": 29, "last_page": 31,
+     "start": "8. Discounts", "end": "9. Tax Benefit", "purpose": "Full discount conditions including NRI and aggregate deductible tables",
+     "unresolved": ["Discount interaction and deductible table column mapping need review."]},
+    {"id": "premium_tiers", "source_id": "prospectus", "first_page": 50, "last_page": 50,
+     "start": "14. Premium Tier", "end": "15. Favourable", "purpose": "City of residence, complete geographic groups and treatment-tier condition"},
+    {"id": "underwriting_loadings", "source_id": "prospectus", "first_page": 49, "last_page": 50,
+     "start": "13.4. Loadings", "end": "13.5. Endorsements", "purpose": "Underwriter counteroffer and acceptance conditions"},
+    {"id": "claims_experience", "source_id": "prospectus", "first_page": 51, "last_page": 53,
+     "start": "This policy is eligible", "end": "16. Calculation", "purpose": "Claims history and age-specific discount tables with all continuation notes",
+     "unresolved": ["Illustration includes Secure+; select base-plan columns explicitly before normalization."]},
+    {"id": "floater_rating", "source_id": "prospectus", "first_page": 53, "last_page": 54,
+     "start": "16. Calculation", "purpose": "Eldest full premium and additional-member discount"},
+    {"id": "base_plan_illustrations", "source_id": "prospectus", "first_page": 55, "last_page": 56,
+     "start": "Plan Name", "purpose": "Individual and floater examples for future arithmetic reconciliation"},
+    {"id": "prospectus_exclusions", "source_id": "prospectus", "first_page": 31, "last_page": 36,
+     "start": "10. Exclusions", "end": "11. Claims Procedure", "purpose": "Full general and specific exclusions with exceptions and waiting-period conditions"},
+    {"id": "wording_exclusions", "source_id": "wording", "first_page": 30, "last_page": 35,
+     "start": "SECTION C.", "end": "SECTION D.", "purpose": "Contract exclusions including all waiting-period continuation pages"},
+    {"id": "protect_override", "source_id": "wording", "first_page": 16, "last_page": 17,
+     "start": "2.3. Protect Benefit", "end": "2.4.", "purpose": "Keep benefit override with exclusion (k)",
+     "unresolved": ["Source refers to C.2 Specific Exclusions but the exclusion section heading is C.3; preserve discrepancy."]}
+  ]
+}

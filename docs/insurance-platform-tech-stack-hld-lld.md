@@ -2,6 +2,17 @@
 
 Practical build reference: what to actually use, what to skip, and how to structure the codebase to match the architecture diagram.
 
+Implementation addendum (2026-11-03): migration 008 adds durable `report_heads` and
+append-only `report_release_receipts`. Non-development message boundaries invalidate
+old authority; owner-only status/release endpoints enforce current report, guardrail,
+advisor and fresh policy checks. See [release contract](report-release.md), including
+the remaining production guardrail hold and interrupted-turn recovery limitation.
+
+Implementation addendum (2026-11-02): migration 007 adds immutable `advisor_reports`
+and `advisor_decisions`, with separately authenticated snapshot/read/decision APIs.
+See [advisor report review](advisor-report-review.md) for the exact contract and
+release limitations. Application migration is pending; customer delivery remains held.
+
 ---
 
 ## 1. Free LLM providers — how to actually use them
@@ -169,6 +180,35 @@ Run focused checks without dotenv loading or inherited service credentials via
 `python -m tests.run_offline <pytest paths/options>`. This is a test launcher,
 not application configuration. Service boundaries remain mocked; Linux Docker
 is required for tests that exercise startup's restricted filesystem logging.
+
+#### Report claim support (maintenance, 2026-10-24)
+
+After citation/compliance parsing, `explanation_report` checks every sentence
+against its own citations before marking a report ready. Complete matching
+evidence statements pass directly with whitespace-only normalization. Statements
+containing digits must reproduce complete internal structured terms/status/conflict
+evidence; changed units, numeric paraphrases and RAG-only numeric statements fail
+deterministically. Evidence kinds are assigned by the catalog, not copied from
+retrieval metadata. Prose paraphrases use a separate `claim_support` LLM task with
+strict per-sentence supported/unsupported/uncertain verdicts. Code validates the
+complete verdict set; the model does not select graph routing or grant approval.
+
+Verification allows at most 32 sentences, 4,096 characters per sentence, 60,000
+characters of semantic input, one bounded verifier invocation (the existing
+provider fallback remains), 2,048 completion tokens and a 30-second deadline.
+Unknown/duplicate/missing IDs, duplicate JSON keys, extra verdict fields, malformed
+JSON, truncation, uncertainty or provider failure cannot authorize delivery.
+Any failed support check clears public report text/sentences and sets internal
+`report_status=claim_support_failed`. The existing API readiness gate withholds
+the response and side channels; this does not itself request a new advisor
+notification. Existing guardrail escalation still follows its unchanged path.
+
+Support method, verdicts, prompt version and actual verifier model/provider are
+stored in `output.claim_support` and existing decision-trace rules JSONB. Rejected
+input turns do not inherit this audit. No schema, SessionState or graph-edge change.
+The verifier is an uncalibrated model judgment; exact reproduction also does not
+verify source truth. See [candidate acceptance cases](claim-support-acceptance.md)
+for limits and the human-reviewed calibration gate before production reliance.
 
 #### Concurrent structured-record contradictions (maintenance, 2026-10-21)
 

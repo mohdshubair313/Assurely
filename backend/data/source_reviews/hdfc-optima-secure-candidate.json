@@ -1,0 +1,180 @@
+{
+  "format_version": "policy-source-review-v1",
+  "insurer": "HDFC ERGO General Insurance",
+  "product": "my:Optima Secure",
+  "review_status": "pending_human_review",
+  "sources": [
+    {
+      "id": "wording",
+      "url": "https://customer-portal-assets.hdfcergo.com/documents/PolicyWordings_myOptimaSecure-76673175551.pdf",
+      "sha256": "195eb0499db969c6789472e7f87ef1c72da110e2a8c7761ecb5add378fe964c1",
+      "accessed_on": "2026-10-24",
+      "page_count": 69
+    },
+    {
+      "id": "prospectus",
+      "url": "https://customer-portal-assets.hdfcergo.com/documents/Prospectus_myOptimaSecure-81493430264.pdf",
+      "sha256": "ff924d405c28e256fada87ce0bfc0b63816f06e87e2d9e9fdd91e115f4a01d32",
+      "accessed_on": "2026-10-26",
+      "page_count": 291
+    }
+  ],
+  "fields": [
+    {
+      "name": "uin",
+      "status": "extracted",
+      "proposed_value": "HDFHLIP26058V082526",
+      "unit": "text",
+      "references": [
+        {
+          "source_id": "wording",
+          "pdf_page": 1,
+          "clause": "Document identity",
+          "quote": "HDFHLIP26058V082526"
+        },
+        {
+          "source_id": "prospectus",
+          "pdf_page": 1,
+          "clause": "Product identity",
+          "quote": "HDFHLIP26058V082526"
+        }
+      ],
+      "conditions": [],
+      "unresolved": [
+        "Pending human review"
+      ]
+    },
+    {
+      "name": "variant",
+      "status": "extracted",
+      "unresolved": [
+        "Pending human review",
+        "Exact applicable policy version/effective period not established."
+      ],
+      "proposed_value": "Optima Secure Plan",
+      "unit": "text",
+      "references": [
+        {
+          "source_id": "prospectus",
+          "pdf_page": 69,
+          "clause": "Rate chart variant identity",
+          "quote": "my:Optima Secure - Optima Secure Plan"
+        }
+      ],
+      "conditions": [
+        "Base Optima Secure Plan only; other plan variants and optional-cover charts are excluded."
+      ]
+    },
+    {
+      "name": "effective_date",
+      "status": "missing",
+      "unresolved": [
+        "Need archived source evidence of exact applicability date; PDF creation/access date is not policy effective date."
+      ]
+    },
+    {
+      "name": "expiry_date",
+      "status": "missing",
+      "unresolved": [
+        "No verified withdrawal/end date; missing does not mean open-ended validity."
+      ]
+    },
+    {
+      "name": "sum_insured_options",
+      "status": "extracted",
+      "unresolved": [
+        "Pending human review",
+        "Other HDFC plans have different cover options."
+      ],
+      "proposed_value": "500000; 1000000; 1500000; 2000000; 2500000; 5000000; 10000000; 20000000",
+      "unit": "INR",
+      "references": [
+        {
+          "source_id": "prospectus",
+          "pdf_page": 69,
+          "clause": "Optima Secure Plan base rate chart columns",
+          "quote": "5,00,000 10,00,000 15,00,000 20,00,000 25,00,000 50,00,000 1,00,00,000 2,00,00,000"
+        }
+      ],
+      "conditions": [
+        "Discrete options for the base Optima Secure Plan tariff chart."
+      ]
+    },
+    {
+      "name": "adult_entry_age_min",
+      "status": "extracted",
+      "proposed_value": "18",
+      "unit": "years",
+      "references": [
+        {
+          "source_id": "wording",
+          "pdf_page": 44,
+          "clause": "D.1.27 Eligibility",
+          "quote": "minimum entry age for an adult is 18 years"
+        }
+      ],
+      "conditions": [],
+      "unresolved": [
+        "Pending human review"
+      ]
+    },
+    {
+      "name": "adult_entry_age_max",
+      "status": "extracted",
+      "proposed_value": "No maximum entry age limit",
+      "unit": "years",
+      "references": [
+        {
+          "source_id": "wording",
+          "pdf_page": 44,
+          "clause": "D.1.27 Eligibility",
+          "quote": "no limit on maximum entry age"
+        }
+      ],
+      "conditions": [],
+      "unresolved": [
+        "Pending human review",
+        "Do not retain the synthetic seed cap of 65."
+      ]
+    },
+    {
+      "name": "ped_waiting_period",
+      "status": "extracted",
+      "proposed_value": "36",
+      "unit": "calendar_months",
+      "references": [
+        {
+          "source_id": "wording",
+          "pdf_page": 30,
+          "clause": "C.1.a.i",
+          "quote": "expiry of 36 months"
+        }
+      ],
+      "conditions": [
+        "Policy schedule may specify otherwise; continuity credits, enhanced cover and insurer acceptance conditions apply."
+      ],
+      "unresolved": [
+        "Pending human review",
+        "Optional PED reductions require selected schedule; preserve month units."
+      ]
+    },
+    {
+      "name": "exclusions",
+      "status": "missing",
+      "unresolved": [
+        "Full conditional exclusions and exceptions require reviewed structured extraction; no abbreviated unconditional list.",
+        "Complete source blocks preserved in artifacts/hdfc-rule-evidence-20261027.json: wording pages 30-35, prospectus pages 31-36, and Protect Benefit override on wording pages 16-17. Normalization and applicability review remain pending; source cross-reference C.2 Specific Exclusions differs from actual C.3 heading."
+      ]
+    },
+    {
+      "name": "premium_table",
+      "status": "missing",
+      "unresolved": [
+        "No complete applicable rate matrix verified with zone, age, family structure, tenure, taxes and options.",
+        "Current base-plan grid: artifacts/hdfc-base-grid-20261027.json, 546 rows / 4368 cells. Full wrapped Tier 5 geography restored; printed rates unchanged. Never infer from another plan or tier.",
+        "Wording definition 2 on physical page 8 defines age as completed years at last birthday at inception of the relevant policy year. Prospectus section 14 on page 50 defines city-of-residence tiers. Address resolution and policy-year dates still require implementation.",
+        "Pricing conditions and full source continuations preserved in artifacts/hdfc-rule-evidence-20261027.json, including NRI, claims-experience, family-floater and underwriter conditions. Modifier composition, rounding, tax treatment, version applicability and qualified review remain open."
+      ]
+    }
+  ]
+}

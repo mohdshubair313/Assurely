@@ -1,0 +1,181 @@
+{
+  "format_version": "policy-source-review-v1",
+  "insurer": "Care Health Insurance",
+  "product": "Care Supreme",
+  "review_status": "pending_human_review",
+  "sources": [
+    {
+      "id": "wording",
+      "url": "https://cms.careinsurance.com/cms/public/uploads/download_center/care-supreme---policy-terms-%26-conditions-%28effective-from-29-april-2026%29.pdf",
+      "sha256": "1f7647762f6c9654de6b4e28fbcb9e5f612c19c9c8756883f809176e539e01b6",
+      "accessed_on": "2026-10-24",
+      "page_count": 83
+    },
+    {
+      "id": "prospectus",
+      "url": "https://cms.careinsurance.com/cms/public/uploads/download_center/care-supreme---prospectus-cum-sales-literature.pdf",
+      "sha256": "b827030031d9efdc448781069f04e30c0e13c37e962f98031cfa6e046a40d90b",
+      "accessed_on": "2026-10-26",
+      "page_count": 39
+    },
+    {
+      "id": "revision_rationale",
+      "url": "https://selfcare.careinsurance.com/data/Care%20Supreme%20-%20Rationale%20for%20Premium%20change.pdf",
+      "sha256": "d3aae5e81dba25b88c00b6563c60ac5e8a576a1b4c02ac4b03ad857618da1ffb",
+      "accessed_on": "2026-10-28",
+      "page_count": 1
+    }
+  ],
+  "fields": [
+    {
+      "name": "uin",
+      "status": "extracted",
+      "proposed_value": "CHIHLIP27061V032627",
+      "unit": "text",
+      "references": [
+        {
+          "source_id": "wording",
+          "pdf_page": 1,
+          "clause": "Cover identity",
+          "quote": "CHIHLIP27061V032627"
+        }
+      ],
+      "unresolved": [
+        "Pending human review"
+      ]
+    },
+    {
+      "name": "variant",
+      "status": "missing",
+      "unresolved": [
+        "Selected base plan, optional benefits and individual/floater schedule are not established."
+      ]
+    },
+    {
+      "name": "effective_date",
+      "status": "extracted",
+      "proposed_value": "2026-04-29",
+      "unit": "date",
+      "references": [
+        {
+          "source_id": "revision_rationale",
+          "pdf_page": 1,
+          "clause": "Exact-UIN product revision notice",
+          "quote": "effective date of revision is 29.04.2026"
+        }
+      ],
+      "conditions": [
+        "Product revision date only, not an individual policy inception date or proof of current applicability."
+      ],
+      "unresolved": [
+        "Pending human review; establish new-business/renewal applicability, selected schedule and supersession before import."
+      ]
+    },
+    {
+      "name": "expiry_date",
+      "status": "missing",
+      "unresolved": [
+        "No verified withdrawal/end date; missing does not mean open-ended validity."
+      ]
+    },
+    {
+      "name": "sum_insured_options",
+      "status": "extracted",
+      "proposed_value": "500000; 700000; 1000000; 1500000; 2000000; 2500000; 5000000; 7500000; 10000000; 60000000",
+      "unit": "INR",
+      "references": [
+        {
+          "source_id": "prospectus",
+          "pdf_page": 23,
+          "clause": "8 Schedule of benefits",
+          "quote": "5L/ 7L/ 10L/ 15L/ 20L/ 25L/ 50L/ 75L/ 1 Cr/ 6 Cr"
+        }
+      ],
+      "conditions": [],
+      "unresolved": [
+        "Pending human review",
+        "Review selected plan/options and interpolation provision before treating these as an exhaustive eligibility rule.",
+        "Official product page observed 2026-10-28 lists a narrower option set; reconcile version/channel/schedule with the pinned prospectus. See docs/care-supreme-source-review.md."
+      ]
+    },
+    {
+      "name": "adult_entry_age_min",
+      "status": "extracted",
+      "proposed_value": "18",
+      "unit": "years",
+      "references": [
+        {
+          "source_id": "prospectus",
+          "pdf_page": 1,
+          "clause": "1 Eligibility criteria",
+          "quote": "Adult: 18 years"
+        }
+      ],
+      "conditions": [
+        "Adult entry only; dependent-child rules differ; age last birthday applies."
+      ],
+      "unresolved": [
+        "Pending human review"
+      ]
+    },
+    {
+      "name": "adult_entry_age_max",
+      "status": "extracted",
+      "proposed_value": "Lifelong",
+      "unit": "years",
+      "references": [
+        {
+          "source_id": "prospectus",
+          "pdf_page": 1,
+          "clause": "1 Eligibility criteria",
+          "quote": "Entry Age \u2013 Maximum Adult: Lifelong"
+        }
+      ],
+      "conditions": [],
+      "unresolved": [
+        "Pending human review",
+        "Preserve unbounded meaning; do not map to a fictitious 99-year maximum.",
+        "Official product page observed 2026-10-28 states adult age 18 to 99; reconcile with this prospectus before using either as an eligibility rule."
+      ]
+    },
+    {
+      "name": "ped_waiting_period",
+      "status": "extracted",
+      "proposed_value": "36",
+      "unit": "calendar_months",
+      "references": [
+        {
+          "source_id": "wording",
+          "pdf_page": 34,
+          "clause": "4.1(a)(i)",
+          "quote": "until the expiry of 36 months of continuous coverage"
+        }
+      ],
+      "conditions": [
+        "Continuous coverage and prior-coverage credits apply; enhanced cover has separate application.",
+        "Disclosure and insurer acceptance apply. Optional PED modification depends on the policy schedule (PDF page 24)."
+      ],
+      "unresolved": [
+        "Validate optional benefit and continuity-credit conditions against selected policy schedule; no conversion to days",
+        "Pending human review"
+      ]
+    },
+    {
+      "name": "exclusions",
+      "status": "missing",
+      "unresolved": [
+        "Full wording/prospectus exclusion blocks, optional overrides and annexures are retained by backend/evidence_plans/care_supreme.json; reviewed structured interpretation remains missing.",
+        "Reconcile Excl11 stabilization-only exception with broader emergency wording in Annexure II; verify current hospital lists and selected optional covers."
+      ]
+    },
+    {
+      "name": "premium_table",
+      "status": "missing",
+      "unresolved": [
+        "No complete applicable rate matrix verified with zone, age, family structure, tenure, taxes and options.",
+        "Prospectus pages 38-39 contain Zone 1 third-year illustrations, not a complete new-business rate matrix.",
+        "Seven-zone, discount, installment and optional-cover conditions are preserved in the Care evidence plan. No matching-UIN full tariff was established by the 2026-10-28 official-source discovery pass; do not substitute older-UIN rates or marketing prices."
+      ]
+    }
+  ]
+}

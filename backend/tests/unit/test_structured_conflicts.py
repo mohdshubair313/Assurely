@@ -109,7 +109,7 @@ async def test_conflict_generates_report_but_holds_delivery_even_with_score_one(
     assert state["approved"] is False and state["escalation"] is True
     assert "Conflicting active policy records" in state["escalation_reason"]
     with patch("app.graph.nodes.explanation_report.llm_call", new=AsyncMock(return_value=LLMResult(
-        content=json.dumps({"sentences": [{"text": "Conflicting records require review.",
+        content=json.dumps({"sentences": [{"text": state["draft_output"]["cited_facts"][0]["claim"],
                                            "evidence_ids": ["E1"]}]}),
         provider="test", model="test",
     ))):

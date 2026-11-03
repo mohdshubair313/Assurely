@@ -93,7 +93,8 @@ async def test_rejected_trace_does_not_reuse_previous_evidence_or_save_profile()
                       "need_fit_view": [
             {"product_name": "Old policy"}
         ]},
-        output={"report_status": "ready", "reply": "old report"},
+        output={"report_status": "ready", "reply": "old report",
+                "claim_support": {"supported": True}},
     )
     db = AsyncMock()
     db.__aenter__.return_value = db
@@ -109,6 +110,7 @@ async def test_rejected_trace_does_not_reuse_previous_evidence_or_save_profile()
     assert trace.sources_per_claim_json == {}
     assert trace.rules_engine_output_json["input_validation"]["status"] == "rejected"
     assert trace.rules_engine_output_json["evidence_conflicts"] == []
+    assert trace.rules_engine_output_json["claim_support"] is None
     assert trace.rules_engine_output_json["report_status"] == "not_generated_input_rejected"
     assert result["profile_memory_persisted"] is False
     db.commit.assert_awaited_once()
