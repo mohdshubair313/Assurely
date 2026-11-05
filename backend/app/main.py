@@ -14,9 +14,10 @@ Responsibilities:
 from __future__ import annotations
 
 import asyncio
+import hmac
 import logging
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager, suppress
+from contextlib import AsyncExitStack, asynccontextmanager, suppress
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -65,6 +66,30 @@ class RequestErrorBoundary:
                     raise
 
 
+class GatewayBoundary:
+    """Require the trusted frontend/operator ingress secret outside development."""
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] == "http" and scope["path"] not in {"/health", "/ready"}:
+            settings = get_settings()
+            if settings.environment != "development":
+                expected = settings.backend_gateway_token.get_secret_value().encode()
+                supplied = [value for key, value in scope["headers"]
+                            if key.lower() == b"x-assurely-gateway-key"]
+                if len(expected) < 32 or len(supplied) != 1 or not hmac.compare_digest(
+                    supplied[0], expected,
+                ):
+                    response = JSONResponse(
+                        {"detail": "Service access is unavailable."}, status_code=403,
+                    )
+                    await response(scope, receive, send)
+                    return
+        await self.app(scope, receive, send)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Application startup and shutdown lifecycle hooks."""
@@ -90,8 +115,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         logger.warning("Could not initialize vector store on startup: %s", e)
 
     try:
-        logger.info("Application started")
-        yield
+        async with AsyncExitStack() as stack:
+            if settings.environment != "development":
+                from app.api.v1 import message
+                from app.graph.runtime import durable_graph
+
+                message._production_graph = await stack.enter_async_context(durable_graph())
+                stack.callback(setattr, message, "_production_graph", None)
+            logger.info("Application started")
+            yield
     finally:
         cleanup.cancel()
         with suppress(asyncio.CancelledError):
@@ -109,21 +141,23 @@ def create_app() -> FastAPI:
 
     app = FastAPI(
         title="InsuranceAI Advisory Platform API",
-        description="Multi-agent health insurance advisory platform for India (Phase 0 Skeleton).",
+        description="Health insurance transparency and reviewed advisory platform for India.",
         version="0.1.0",
-        docs_url="/docs",
-        redoc_url="/redoc",
+        docs_url="/docs" if settings.environment == "development" else None,
+        redoc_url="/redoc" if settings.environment == "development" else None,
+        openapi_url="/openapi.json" if settings.environment == "development" else None,
         lifespan=lifespan,
     )
 
     # CORS configuration
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
-        allow_credentials=True,
+        allow_origins=settings.cors_origins,
+        allow_credentials=False,
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    app.add_middleware(GatewayBoundary)
     app.add_middleware(RequestErrorBoundary)
 
     # Mount v1 router
@@ -131,7 +165,7 @@ def create_app() -> FastAPI:
 
     @app.get("/health", tags=["health"])
     async def health_check() -> dict[str, str]:
-        """Liveness / readiness health probe."""
+        """Process and restricted-diagnostics liveness probe."""
         sink = getattr(app.state, "exception_sink", None)
         if sink is not None and sink.failed:
             from fastapi import HTTPException
@@ -142,6 +176,22 @@ def create_app() -> FastAPI:
             "environment": settings.environment,
             "version": "0.1.0",
         }
+
+    @app.get("/ready", tags=["health"])
+    async def readiness_check() -> JSONResponse:
+        """Infrastructure readiness only; never a policy or delivery approval."""
+        from app.api.v1 import message
+        from app.ops.readiness import dependencies_ready
+
+        sink = getattr(app.state, "exception_sink", None)
+        runtime_ready = (settings.environment == "development"
+                         or message._production_graph is not None)
+        ready = bool(sink is not None and not sink.failed and runtime_ready)
+        if ready:
+            ready = await dependencies_ready()
+        return JSONResponse({"status": "ready" if ready else "unavailable"},
+                            status_code=200 if ready else 503,
+                            headers={"Cache-Control": "no-store"})
 
     return app
 

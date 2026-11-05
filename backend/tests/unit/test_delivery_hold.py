@@ -114,7 +114,9 @@ def test_new_turn_resets_stale_approval_without_erasing_internal_output() -> Non
     async def intake_only(input_state: dict[str, Any], **kwargs: Any) -> dict[str, Any]:
         assert input_state["approved"] is False
         assert input_state["delivery_hold"] is True
-        assert "output" not in input_state
+        # Continuations preserve the internal report for audit; stale approval
+        # is revoked and the public response must still withhold that report.
+        assert input_state["output"] == previous["output"]
         return {**previous, **input_state, "missing_fields": ["age"]}
 
     graph = SimpleNamespace(

@@ -1,0 +1,59 @@
+# Direct TLS ingress. Do not place behind a proxy without a reviewed real-IP policy.
+limit_req_zone $binary_remote_addr zone=account:10m rate=6r/m;
+limit_req_zone $binary_remote_addr zone=messages:10m rate=12r/m;
+limit_req_zone $binary_remote_addr zone=api:10m rate=60r/m;
+limit_req_status 429;
+server_tokens off;
+access_log off;
+error_log /dev/stderr crit;
+
+server {
+    listen 8080 default_server;
+    server_name _;
+    return 308 https://${PUBLIC_HOST}$request_uri;
+}
+
+server {
+    listen 8443 ssl default_server;
+    server_name ${PUBLIC_HOST};
+    ssl_certificate /run/secrets/tls_cert;
+    ssl_certificate_key /run/secrets/tls_key;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_session_tickets off;
+    if ($host != "${PUBLIC_HOST}") { return 421; }
+    client_max_body_size 64k;
+    client_body_timeout 15s;
+    client_header_timeout 15s;
+    keepalive_timeout 30s;
+    add_header X-Content-Type-Options nosniff always;
+    add_header Referrer-Policy no-referrer always;
+    add_header X-Frame-Options DENY always;
+    # Start short; increase only after verifying the owned domain's TLS renewal.
+    add_header Strict-Transport-Security "max-age=86400" always;
+
+    proxy_http_version 1.1;
+    proxy_set_header Host ${PUBLIC_HOST};
+    proxy_set_header X-Forwarded-Host ${PUBLIC_HOST};
+    proxy_set_header X-Forwarded-Proto https;
+    proxy_set_header X-Forwarded-For $remote_addr;
+    proxy_set_header Connection "";
+    proxy_read_timeout 130s;
+    proxy_send_timeout 15s;
+    proxy_hide_header X-Powered-By;
+    proxy_hide_header Server;
+
+    location = /api/auth/sign-in {
+        limit_req zone=account burst=3 nodelay;
+        proxy_pass http://frontend:3000;
+    }
+    location = /api/backend/message {
+        limit_req zone=messages burst=3 nodelay;
+        proxy_pass http://frontend:3000;
+    }
+    location /api/ {
+        limit_req zone=api burst=15 nodelay;
+        proxy_pass http://frontend:3000;
+    }
+    # No public backend health/docs/admin/review-import path.
+    location / { proxy_pass http://frontend:3000; }
+}

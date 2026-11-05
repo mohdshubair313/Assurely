@@ -16,9 +16,11 @@ Advisor = Annotated[Reviewer, Depends(require_advisor)]
 
 @router.post("/sessions/{session_id}/snapshot")
 async def snapshot(session_id: str, actor: Advisor, db: Database) -> dict[str, Any]:
-    from app.api.v1.message import _app_graph
+    from app.api.v1.message import get_app_graph
+    from app.graph.runtime import read_config
 
-    checkpoint = await _app_graph.aget_state({"configurable": {"thread_id": session_id}})
+    config = await read_config(session_id, current_only=True)
+    checkpoint = await get_app_graph().aget_state(config) if config is not None else None
     if not checkpoint or not checkpoint.values:
         raise HTTPException(404, "Current report checkpoint is unavailable.")
     try:

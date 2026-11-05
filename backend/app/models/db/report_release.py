@@ -37,6 +37,7 @@ class ReportHead(Base):
     )
     owner_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     turn_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    completed_turn_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     status: Mapped[str] = mapped_column(String(20), nullable=False)
     report_digest: Mapped[str | None] = mapped_column(
         String(64),
@@ -75,4 +76,22 @@ class ReleaseReceipt(Base):
         DateTime(timezone=True),
         nullable=False,
         server_default=text("now()"),
+    )
+
+
+class TurnRecoveryReceipt(Base):
+    __tablename__ = "turn_recovery_receipts"
+    __table_args__ = (
+        UniqueConstraint("issuer", "owner_id", "request_key", name="uq_turn_recovery_key"),
+    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    issuer: Mapped[str] = mapped_column(String(500), nullable=False)
+    session_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("sessions.id", ondelete="RESTRICT"), nullable=False,
+    )
+    owner_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    turn_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    request_key: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("now()"),
     )

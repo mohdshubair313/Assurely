@@ -175,14 +175,23 @@ async def test_release_migration_refuses_to_destroy_current_turns(database):
     migration = runpy.run_path(str(
         Path(__file__).parents[2] / "alembic/versions/008_report_release.py"
     ))
+    recovery = runpy.run_path(str(
+        Path(__file__).parents[2] / "alembic/versions/009_turn_recovery.py"
+    ))
 
     def run(conn, action):
         with Operations.context(MigrationContext.configure(conn)):
             migration[action]()
 
+    def run_recovery(conn, action):
+        with Operations.context(MigrationContext.configure(conn)):
+            recovery[action]()
+
     async with engine.begin() as conn:
+        await conn.run_sync(run_recovery, "downgrade")
         await conn.run_sync(run, "downgrade")
         await conn.run_sync(run, "upgrade")
+        await conn.run_sync(run_recovery, "upgrade")
     async with factory() as db, db.begin():
         await store.begin_turn(db, ACTOR.issuer, "synthetic", uuid.uuid4())
     with pytest.raises(DBAPIError, match="Refusing downgrade"):

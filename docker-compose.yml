@@ -7,7 +7,7 @@ services:
   api:
     build:
       context: ./backend
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.development
     container_name: insurance-api
     env_file:
       - ./backend/.env

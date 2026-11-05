@@ -70,8 +70,10 @@ errors fail closed. The existing legacy comparison and its unverified seed value
 remain blocked in non-development environments.
 
 **Customer delivery remains held.** The existing `publication_gate` remains
-`blocked`, Stage 4 disapproves/escalates, and API responses redact the intermediate
-comparison. The report node now renders these scoped facts through the
+`blocked` for the legacy path. Stage 4 may approve only freshly revalidated scoped
+facts under the [reviewed guardrail contract](reviewed-guardrail-contract.md), with
+mandatory escalation; synchronous API responses redact the intermediate comparison.
+The report node now renders these scoped facts through the
 [reviewed report adapter](reviewed-explanation-report.md), and the
 decision-trace writer now records the comparison's term/source identifiers as
 [historical lookup evidence](reviewed-comparison-trace.md). A future release needs a

@@ -18,5 +18,6 @@ PR descriptions should explain the concrete behavior change, validation and
 limitations. Include screenshots for visible UI changes. Do not attach tokens,
 private traces, customer records or raw insurer PDFs.
 
-Read [SECURITY.md](SECURITY.md) for sensitive findings. The repository's license
-has not yet been selected; coordinate contribution/reuse terms with the maintainer.
+Read [SECURITY.md](SECURITY.md) for sensitive findings. Contributions to this
+repository are provided under its [MIT License](LICENSE). Third-party material
+retains its own terms; include only material you have permission to contribute.

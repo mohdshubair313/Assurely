@@ -42,11 +42,11 @@ engineering preview, not a production-approved advisory service.
 
 | Area | Implemented | Remaining boundary |
 | --- | --- | --- |
-| Frontend | Landing, intake/comparison previews, light/dark UI | Backend integration and complete journey verification |
-| Advisory graph | Intake, health/risk analysis, comparison, guardrail, report, escalation, decision trace | Production validation and durable full-graph recovery |
+| Frontend | Landing/previews, connected customer/advisor workspaces, Clerk and API gateway | Live provider and genuine policy/advisor verification |
+| Advisory graph | Complete graph checkpoints in Postgres, isolated turns and owner recovery | Infrastructure failover, retention and production validation |
 | Policy review | PDF evidence, typed rules, publication/revocation, reviewed terms | Qualified insurer/tariff/calculator approval |
 | Advisor workflow | Verified identity, exact-report approval, expiry and revocation | Live operator configuration |
-| Release | Durable turn/report binding and transactional release receipts | Production comparison guardrail remains held; migration/deployment review pending |
+| Release | Scoped guardrail approval, durable turn/report binding and transactional release receipts | Real-source approval and migration/deployment review pending |
 | Evaluation | Unit/integration suites and recorded experiments | Semantic verifier calibration is not production-approved |
 
 Seeded policy terms and calculator assumptions are **unverified scaffolding**.
@@ -150,8 +150,14 @@ record transaction-time decisions, not proof of network delivery.
 ## Configuration and API
 
 [`.env.example`](backend/.env.example) lists local settings. Protected APIs require
-`AUTH_ISSUER`, `AUTH_AUDIENCE` and `AUTH_JWKS_URL` for a trusted RS256 identity
-provider. Reviewer, publisher and advisor allowlists are independent and empty by
+`AUTH_PROVIDER=clerk`, `AUTH_ISSUER`, `AUTH_JWKS_URL` and explicit
+`AUTH_AUTHORIZED_PARTIES`. Standard Clerk v2 sessions do not require an audience;
+set `AUTH_AUDIENCE` only for a deliberately configured audience-bearing profile.
+
+FastAPI uses the official Python `clerk-backend-api` SDK with issuer-pinned JWKS
+and Assurely's additional required-claim and permission checks. The Next.js SDK
+handles account UI and session refresh; API authorization remains in Python.
+Admin, reviewer, publisher and advisor allowlists are independent and empty by
 default. Client-supplied roles cannot grant access. Keep real credentials in ignored
 local configuration; never paste them into issues or commits.
 
@@ -163,11 +169,31 @@ local configuration; never paste them into issues or commits.
 | `/v1/policy-publications` | Publication/revocation and reviewed term import |
 | `/v1/advisor-reviews` | Exact-report snapshot, approval and revocation |
 | `GET /v1/sessions/{id}/report-status` | Owner-only durable report metadata |
+| `POST /v1/sessions/{id}/recover-turn` | Owner-only interrupted-turn invalidation |
 | `POST /v1/sessions/{id}/report-release` | Owner-only fresh release decision |
 
 Use `/docs` on the running API for request schemas. The release endpoint cannot
-bypass guardrail disapproval; the production comparison gate remains held. Read
+bypass guardrail disapproval. Scoped approval still requires independent advisor
+authorization and fresh release-time evidence checks. Read
 [release semantics and recovery limits](docs/report-release.md).
+
+Staging/production uses durable Postgres checkpoints. After application migrations,
+run `python -m app.db.setup_checkpoints` as an explicit deployment migration job;
+startup refuses an unprepared checkpoint schema. See
+[checkpoint setup and recovery](docs/durable-graph-recovery.md).
+
+The connected customer journey is at `/workspace`; authorized advisors use `/advisor`.
+Configure the frontend with [frontend/.env.example](frontend/.env.example), then follow
+the [release gates and deployment handoff](docs/release-gates.md) and
+[Vercel/Back4App deployment guide](docs/production-deployment.md). Production
+containers, readiness/startup checks, a server-only gateway key and encrypted
+backup tooling are available; genuine live approvals remain required. Guided intake,
+comparison/report views, case-review status and privacy controls now use real APIs;
+see the [frontend integration audit](docs/frontend-api-integration.md) for endpoint
+coverage, validation and deliberately separate operator tools. No real-source
+approval is implied. Clerk code and migration are implemented; genuine provider
+setup/live login checks remain pending. See [Clerk setup](docs/clerk-authentication.md)
+and [implementation report](AUTH_IMPLEMENTATION_REPORT.md). Voice remains future work.
 
 ## Development & testing
 
@@ -215,15 +241,16 @@ PROGRESS.md         Dated checkpoints and remaining work
 
 ## Roadmap and documentation
 
-1. Review the production guardrail/report contract and finish full-graph recovery.
+1. Review scoped guardrail/recovery contracts and validate deployment operations/retention.
 2. Complete qualified policy/tariff/calculator approval and live auth/advisor setup.
-3. Connect the frontend and verify the complete customer/advisor journey.
+3. Verify the connected customer/advisor journey on the actual deployment.
 4. Scope additional blueprint capabilities separately from the health/web MVP.
 
 [Master roadmap](docs/insurance-platform-master-roadmap.md) ·
 [Architecture](docs/insurance-platform-tech-stack-hld-lld.md) ·
 [Evaluation harness](docs/insurance-platform-eval-harness.md) ·
 [Reviewed reports](docs/reviewed-explanation-report.md) ·
+[Reviewed guardrail contract](docs/reviewed-guardrail-contract.md) ·
 [Blueprint assessment](docs/blueprint-scope-assessment-20261028.md)
 
 ## Contributing, security and license
@@ -232,7 +259,5 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for workflow and review expectations and
 [SECURITY.md](SECURITY.md) for sensitive findings. Use synthetic fixtures; do not
 commit customer information, credentials, raw policy PDFs or private traces.
 
-**License status:** no software license is currently included. Public source
-availability does not itself grant open-source reuse rights. A maintainer-selected
-license is needed before presenting this as a licensed open-source release.
+Licensed under the [MIT License](LICENSE).
 Third-party dependencies and assets retain their own licenses.

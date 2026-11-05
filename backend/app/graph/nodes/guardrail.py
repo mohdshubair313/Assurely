@@ -24,6 +24,8 @@ import math
 import re
 from typing import Any, TypeGuard
 
+from app.core.config import get_settings
+from app.graph.reviewed_guardrail import validate_reviewed_draft
 from app.graph.state import SessionState
 
 logger = logging.getLogger(__name__)
@@ -459,6 +461,46 @@ def evaluate_escalation(
 # ── Guardrail Node ────────────────────────────────────────────────────────────
 
 
+async def _reviewed_guardrail(state: SessionState) -> dict[str, Any]:
+    """Approve scoped evidence only; an independent advisor must authorize release."""
+    import asyncio
+
+    notes = ["Reviewed scope: selected product facts only; no personal eligibility, "
+             "premium, calculator or claim-payment approval."]
+    approved = False
+    try:
+        async with asyncio.timeout(30):
+            evidence = await validate_reviewed_draft(state, get_settings().auth_issuer)
+        violations = [violation for item in evidence for violation in (
+            check_ranking_language(item["claim"]) + check_unlicensed_advice(item["claim"])
+        )]
+        approved = not violations
+        notes.append("PASSED current scoped evidence and text checks." if approved
+                     else "FAILED scoped text compliance check.")
+    except Exception:
+        # A failed DB/provider/config/shape boundary must never reuse old flags.
+        # Raw policy/customer data and exception details are not audit messages.
+        notes.append("FAILED current scoped evidence validation; approval withheld.")
+        logger.warning("Reviewed guardrail validation unavailable")
+    notes.append("Confidence unavailable for this scoped contract; 0.00 is a "
+                 "conservative placeholder, not an estimated probability.")
+    notes.append("Independent report-bound advisor approval and fresh transactional "
+                 "release checks are required before delivery.")
+    return {
+        "approved": approved,
+        "escalation": True,
+        "escalation_reason": ("Scoped product facts require independent advisor review."
+                              if approved else "Reviewed evidence validation failed."),
+        "guardrail_notes": notes,
+        "confidence_score": 0.0,
+        "confidence_inputs": {
+            "scope": "reviewed_product_facts_v1",
+            "confidence_available": False,
+            "scoped_evidence_validated": approved,
+        },
+    }
+
+
 async def guardrail_node(state: SessionState) -> dict[str, Any]:
     """Execute Stage 4 compliance check and advisor escalation assessment.
 
@@ -468,6 +510,13 @@ async def guardrail_node(state: SessionState) -> dict[str, Any]:
       - Only ``explanation_report`` writes ``output``.
     """
     draft_output = state.get("draft_output", {})
+    if (
+        get_settings().environment != "development"
+        or state.get("reviewed_comparison_request") is not None
+        or "reviewed_comparison" in draft_output
+        or draft_output.get("publication_gate") == "blocked"
+    ):
+        return await _reviewed_guardrail(state)
     hidden_clauses = state.get("hidden_clauses", [])
     user_profile = state.get("user_profile", {})
     session_id = state.get("session_id", "unknown")

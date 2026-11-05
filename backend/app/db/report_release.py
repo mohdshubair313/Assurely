@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.correlation import SESSION_NAMESPACE, database_session_id
 from app.db import advisor_review
-from app.db.policy_review_store import WorkflowError
+from app.db.policy_review_store import Reviewer, WorkflowError
 from app.db.reviewed_delivery import check_reviewed_delivery
 from app.db.source_review import ClosedModel, Digest
 from app.models.db.advisor_review import AdvisorReport
@@ -90,6 +90,8 @@ async def finish_turn(
     if row is None or row.turn_id != turn_id or row.status != "running":
         raise WorkflowError(409, "The current turn changed.")
     row.status = "failed" if state is None else "complete"
+    if state is not None:
+        row.completed_turn_id = turn_id
     if (
         state is None
         or state.get("input_status") != "accepted"
@@ -169,6 +171,9 @@ async def release(
         or event.expires_at <= datetime.now(UTC)
     ):
         raise WorkflowError(409, "Current advisor approval is required.")
+    await advisor_review.require_assignment(
+        db, Reviewer(event.actor_id, issuer), current.session_id
+    )
     check = await check_reviewed_delivery(db, issuer, report.snapshot)
     if not check.evidence_current or event.expires_at <= datetime.now(UTC):
         raise WorkflowError(409, "Report evidence or advisor approval is no longer current.")

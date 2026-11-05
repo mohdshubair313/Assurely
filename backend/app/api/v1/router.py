@@ -15,6 +15,7 @@ from fastapi import APIRouter
 
 from app.api.v1.advisor_reviews import router as advisor_reviews_router
 from app.api.v1.consent import router as consent_router
+from app.api.v1.identity import router as identity_router
 from app.api.v1.message import router as message_router
 from app.api.v1.policy_publications import router as policy_publications_router
 from app.api.v1.policy_reviews import router as policy_reviews_router
@@ -25,6 +26,7 @@ from app.api.v1.webhooks import router as webhooks_router
 api_v1_router = APIRouter(prefix="/v1")
 
 api_v1_router.include_router(message_router, tags=["message"])
+api_v1_router.include_router(identity_router, tags=["identity"])
 api_v1_router.include_router(consent_router, tags=["consent"])
 api_v1_router.include_router(sessions_router, tags=["sessions"])
 api_v1_router.include_router(webhooks_router, tags=["webhooks"])

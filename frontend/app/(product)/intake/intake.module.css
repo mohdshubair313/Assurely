@@ -1,4 +1,6 @@
 .page {
+  --color-primary-base: var(--intake-blue);
+  --color-primary-strong: var(--harbor-strong);
   --intake-ink: #172b38;
   --intake-muted: #6f7c80;
   --intake-blue: #2c5f73;

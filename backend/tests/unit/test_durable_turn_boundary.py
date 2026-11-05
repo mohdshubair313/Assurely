@@ -20,6 +20,8 @@ def test_begin_precedes_graph_and_failure_finishes_without_report(fails):
         return turn
 
     async def graph(*args, **kwargs):
+        assert kwargs["durability"] == "sync"
+        assert kwargs["config"]["configurable"]["thread_id"] != "raw-session"
         order.append("graph")
         if fails:
             raise ValueError("Synthetic failure")
@@ -37,13 +39,15 @@ def test_begin_precedes_graph_and_failure_finishes_without_report(fails):
         patch("app.api.v1.message.get_settings", return_value=SimpleNamespace(
             environment="production", auth_issuer="https://issuer.test/")),
         patch("app.api.v1.message.AsyncSessionLocal", return_value=db),
-        patch("app.api.v1.message._app_graph", SimpleNamespace(
+        patch("app.api.v1.message.read_config", AsyncMock(return_value=None)),
+        patch("app.api.v1.message._production_graph", SimpleNamespace(
             aget_state=AsyncMock(return_value=None), ainvoke=graph)),
         patch("app.api.v1.message.report_release.begin_turn", begin),
         patch("app.api.v1.message.report_release.finish_turn", finish),
     ):
         response = TestClient(app).post(
-            "/v1/message", json={"user_message": "Explain health cover"},
+                "/v1/message", json={"session_id": "raw-session",
+                                      "user_message": "Explain health cover"},
         )
     assert response.status_code == (500 if fails else 200)
     assert order == ["begin", "graph", "finish"]

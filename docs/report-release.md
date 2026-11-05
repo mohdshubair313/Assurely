@@ -17,10 +17,13 @@ The pointer is scoped to issuer/session/owner, and late completion cannot overwr
 a newer turn. The snapshot uses the same digest as advisor review. No customer
 request may write a report or guardrail approval into this store.
 
-This is not a durable LangGraph checkpointer. Process death/cancellation can leave
-a turn `running`, intentionally blocking another turn and release. An operator
-must establish that its worker is no longer executing before recovery; automated
-lease/recovery and full conversation checkpoint persistence remain future work.
+This release store is separate from the durable LangGraph checkpointer. Process
+death/cancellation can leave a turn `running`, blocking another turn and release.
+The verified owner
+can close an interrupted turn through the verified-owner recovery endpoint, which
+requires acquiring the same execution lock used by live workers. Durable full-graph
+checkpoints and isolated turn namespaces now preserve completed conversation state;
+see [checkpoint and recovery contract](durable-graph-recovery.md).
 Development mode bypasses this lifecycle and cannot use the release endpoint.
 
 ## Release contract
@@ -56,10 +59,13 @@ reports; release is explicit and separately authenticated.
 
 ## Production boundary
 
-The non-development comparison path still causes guardrail disapproval. Therefore
-actual reports remain held until that separate node contract is reviewed and
-updated. Successful release tests use a synthetic server guardrail result and
-synthetic policy approvals, not real insurer/customer authorization.
+The [scoped guardrail contract](reviewed-guardrail-contract.md) now validates the
+selected reviewed facts with a fresh database lookup and mandatory escalation.
+Customer release still requires independent advisor authorization and another
+fresh transactional evidence check. Earlier release tests use synthetic server
+guardrail flags; the newer guardrail integration cases exercise the actual node.
+All policy and advisor fixtures remain synthetic; real-source and deployment
+approval are outstanding.
 
 Application migrations were not applied. Migration 008 creates `report_heads`
 and append-only `report_release_receipts`, and refuses downgrade with records.

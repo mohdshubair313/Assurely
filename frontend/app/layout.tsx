@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { DM_Serif_Display, IBM_Plex_Sans, IBM_Plex_Mono, Caveat } from "next/font/google";
 import "./globals.css";
 import { Analytics } from "@vercel/analytics/next"
+import { ClerkProvider } from "@clerk/nextjs";
+import { clerkConfigured } from "@/lib/auth-config";
 
 /**
  * Root layout — design.md §4 typography + theme support.
@@ -70,7 +72,9 @@ export default function RootLayout({
       <body className="min-h-full flex flex-col font-body bg-canvas text-ink">
         <Analytics />
         <script dangerouslySetInnerHTML={{ __html: `try{document.documentElement.dataset.theme=localStorage.getItem('assurely-theme')==='dark'?'dark':'light'}catch{document.documentElement.dataset.theme='light'}` }} />
-        {children}
+        {clerkConfigured ? <ClerkProvider signInUrl="/sign-in" signUpUrl="/sign-up"
+          signInForceRedirectUrl="/workspace" signUpForceRedirectUrl="/intake"
+          afterSignOutUrl="/">{children}</ClerkProvider> : children}
       </body>
     </html>
   );

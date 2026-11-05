@@ -6,14 +6,17 @@ import uuid
 from datetime import UTC, datetime
 from typing import Annotated, Any, Literal, cast
 
-from fastapi import APIRouter, Depends
-from pydantic import BaseModel
-from sqlalchemy import delete, update
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy import delete, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.engine import CursorResult
 
+from app.core.config import get_settings
+from app.core.consent import CONSENT_VERSION
 from app.core.security import require_authenticated_user_id, require_matching_user_id
 from app.db.session import AsyncSessionLocal
+from app.models.db.auth_identity import AuthEvent
 from app.models.db.consent_record import ConsentRecord
 from app.models.db.user import User
 from app.models.db.user_profile_memory import UserProfileMemory
@@ -22,9 +25,11 @@ router = APIRouter()
 
 
 class ConsentRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     user_id: uuid.UUID
     scope: Literal["process_comparison", "save_profile", "receive_updates"]
     action: Literal["grant", "revoke"]
+    purpose_version: str | None = Field(default=None, max_length=40)
 
 
 class ConsentResponse(BaseModel):
@@ -32,6 +37,7 @@ class ConsentResponse(BaseModel):
     scope: str
     status: str
     timestamp: str
+    purpose_version: str
 
 
 class ProfileMemoryDeletionResponse(BaseModel):
@@ -46,6 +52,10 @@ async def update_consent(
 ) -> ConsentResponse:
     """Persist consent and immediately erase profile memory when consent is revoked."""
     require_matching_user_id(authenticated_user_id, req.user_id)
+    clerk = get_settings().auth_provider == "clerk"
+    version = CONSENT_VERSION if clerk else (req.purpose_version or "legacy-v0")
+    if clerk and req.action == "grant" and req.purpose_version != CONSENT_VERSION:
+        raise HTTPException(422, "Read and accept the current consent purpose before granting.")
     now = datetime.now(UTC)
     async with AsyncSessionLocal() as db:
         await db.execute(
@@ -54,9 +64,16 @@ async def update_consent(
             .on_conflict_do_nothing(index_elements=[User.id])
         )
         if req.action == "grant":
+            # Keep previous receipts; replace an old active version rather than relabel it.
+            if clerk:
+                await db.execute(update(ConsentRecord).where(
+                    ConsentRecord.user_id == req.user_id,
+                    ConsentRecord.scope == req.scope, ConsentRecord.revoked_at.is_(None),
+                    ConsentRecord.purpose_version != version,
+                ).values(revoked_at=now))
             await db.execute(
                 insert(ConsentRecord)
-                .values(user_id=req.user_id, scope=req.scope)
+                .values(user_id=req.user_id, scope=req.scope, purpose_version=version)
                 .on_conflict_do_nothing(
                     index_elements=[ConsentRecord.user_id, ConsentRecord.scope],
                     index_where=ConsentRecord.revoked_at.is_(None),
@@ -76,6 +93,18 @@ async def update_consent(
                 await db.execute(
                     delete(UserProfileMemory).where(UserProfileMemory.user_id == req.user_id)
                 )
+        if clerk:
+            db.add(AuthEvent(id=uuid.uuid4(), user_id=req.user_id,
+                            action=f"consent_{req.action}", details={
+                                "scope": req.scope, "purpose_version": version,
+                                "issuer": get_settings().auth_issuer}))
+            if req.action == "grant":
+                granted_at = await db.scalar(select(ConsentRecord.granted_at).where(
+                    ConsentRecord.user_id == req.user_id, ConsentRecord.scope == req.scope,
+                    ConsentRecord.revoked_at.is_(None),
+                ))
+                if granted_at is not None:
+                    now = granted_at
         await db.commit()
 
     return ConsentResponse(
@@ -83,6 +112,7 @@ async def update_consent(
         scope=req.scope,
         status="granted" if req.action == "grant" else "revoked",
         timestamp=now.isoformat(),
+        purpose_version=version,
     )
 
 

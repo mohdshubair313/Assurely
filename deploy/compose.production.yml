@@ -1,0 +1,93 @@
+name: assurely-production
+
+x-runtime: &runtime
+  restart: unless-stopped
+  init: true
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  pids_limit: 256
+  logging:
+    driver: local
+    options: {max-size: "10m", max-file: "3"}
+
+services:
+  api:
+    <<: *runtime
+    image: ${API_IMAGE:?Set API_IMAGE to the reviewed production image}
+    env_file: ["${BACKEND_ENV_FILE:?Set a private backend environment file}"]
+    environment:
+      ENVIRONMENT: production
+      CORS_ORIGINS: "[]"
+      EXCEPTION_LOG_DIR: /var/log/insuranceai/private
+    tmpfs: [/tmp:size=64m,mode=1777]
+    volumes: ["private-diagnostics:/var/log/insuranceai"]
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/ready', timeout=8)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks: [application]
+    mem_limit: 2g
+
+  frontend:
+    <<: *runtime
+    image: ${FRONTEND_IMAGE:?Set FRONTEND_IMAGE to the reviewed production image}
+    env_file: ["${FRONTEND_ENV_FILE:?Set a private frontend environment file}"]
+    environment:
+      NODE_ENV: production
+      BACKEND_URL: http://api:8000
+      BACKEND_PRIVATE_NETWORK: "1"
+      APP_ORIGIN: https://${PUBLIC_HOST:?Set the owned public hostname}
+      HOSTNAME: 0.0.0.0
+    tmpfs: [/tmp:size=64m,mode=1777, /app/.next/cache:size=64m,uid=1000,gid=1000]
+    depends_on:
+      api: {condition: service_healthy}
+    networks: [application]
+    mem_limit: 1g
+
+  ingress:
+    <<: *runtime
+    image: nginx:stable-alpine
+    user: "101:101"
+    environment:
+      PUBLIC_HOST: ${PUBLIC_HOST:?Set the owned public hostname}
+      NGINX_ENVSUBST_FILTER: ^PUBLIC_HOST$
+    # Closed to remote traffic by default. Public binding requires the release checklist.
+    ports:
+      - "${BIND_ADDRESS:-127.0.0.1}:80:8080"
+      - "${BIND_ADDRESS:-127.0.0.1}:443:8443"
+    volumes: ["./nginx.conf.template:/etc/nginx/templates/default.conf.template:ro"]
+    tmpfs:
+      - /etc/nginx/conf.d:uid=101,gid=101,mode=0700
+      - /var/cache/nginx:uid=101,gid=101,mode=0700
+      - /var/run:uid=101,gid=101,mode=0700
+    secrets: [tls_cert, tls_key]
+    depends_on: [frontend]
+    networks: [application]
+    mem_limit: 128m
+
+  backup:
+    <<: *runtime
+    profiles: [operations]
+    image: ${BACKUP_IMAGE:-assurely-backup:release}
+    restart: "no"
+    env_file: ["${BACKUP_ENV_FILE:-/secure/assurely/backup.env}"]
+    tmpfs: [/tmp:size=16m,mode=1777]
+    volumes:
+      - "${BACKUP_DIRECTORY:-/secure/assurely/backups}:/backups"
+    networks: [application]
+    mem_limit: 256m
+
+networks:
+  application:
+    # Outbound access is required for the owned identity/model/database endpoints.
+    driver: bridge
+volumes:
+  private-diagnostics:
+secrets:
+  tls_cert:
+    file: ${TLS_CERT_FILE:?Set the TLS certificate chain file}
+  tls_key:
+    file: ${TLS_KEY_FILE:?Set the TLS private key file}

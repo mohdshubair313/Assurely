@@ -113,7 +113,7 @@ export default function ProcessSteps() {
 
       <div className="text-center mt-12">
         <a
-          href="/intake"
+          href="/workspace"
           className="inline-flex items-center gap-2 text-harbor hover:text-harbor-strong font-body font-medium transition-theme group"
         >
           Begin your independent assessment

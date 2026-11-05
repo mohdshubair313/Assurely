@@ -1,12 +1,11 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useRef } from "react";
 import Link from "next/link";
 import Glyph from "@/components/ui/Glyph";
 import { Button, ButtonLabel } from "@/components/createui/button";
 import { Badge } from "@/components/createui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/createui/tabs";
-import { Input } from "@/components/createui/input";
 import { InlineAlert, InlineAlertIcon, InlineAlertContent, InlineAlertHeading, InlineAlertTitle, InlineAlertDescription } from "@/components/createui/inline-alert";
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from "@/components/createui/accordion";
 import LandingMotion from "./LandingMotion";
@@ -55,9 +54,6 @@ function EvidenceFolio() {
 }
 
 export default function LandingExperience() {
-  const [claim, setClaim] = useState("");
-  const [checkedClaim, setCheckedClaim] = useState<string | null>(null);
-  const [invalid, setInvalid] = useState(false);
   return <LandingMotion className={styles.landing}>
     <CoverageObservatory />
 
@@ -75,11 +71,13 @@ export default function LandingExperience() {
 
     <section className={styles.claimSection} id="what-we-compare" aria-labelledby="claim-heading">
       <div className={styles.claimCopy} data-reveal><p className={styles.kicker}><span /> WHAT WE COMPARE</p><h2 className={styles.heading} id="claim-heading">“It’s all covered.”<br /><em>Let’s look closer.</em></h2><p className={styles.lede}>Keep the statement. Find the clause.<br />Make space for what still needs checking.</p><ol className={styles.comparisonLenses}>{comparisonLenses.map((lens, i) => <li key={lens.label}><span className={styles.lensNumber}>{String(i + 1).padStart(2, "0")}</span><Glyph name={lens.icon} size={20} /><div><strong>{lens.label}</strong><p>{lens.detail}</p></div></li>)}</ol><div className={styles.claimFootnote}><Glyph name="file" size={18} /><p>A statement alone is not evidence.<br />The wording comes first.</p></div></div>
-      <ReflectiveSurface className={styles.claimCard}><Badge variant="primary" appearance="soft" size="md" shape="pill" leading={<Glyph name="search" size={15} />}>Statement explorer</Badge><h3>What did they tell you?</h3><p>Try a statement you would want to check.</p><form onSubmit={(event) => { event.preventDefault(); if (!claim.trim()) { setInvalid(true); return; } setInvalid(false); setCheckedClaim(claim.trim()); }}>
-        <label htmlFor="landing-claim" className={styles.inputLabel}>The statement</label><Input id="landing-claim" size="md" value={claim} onChange={(event) => { setClaim(event.target.value); setCheckedClaim(null); setInvalid(false); }} placeholder="All hospital rooms are covered…" maxLength={600} required aria-invalid={invalid} aria-describedby="claim-help" />
-        <p id="claim-help" className={styles.formHelp}>{invalid ? "Enter a statement before continuing." : "Design preview · Your text stays in this page and is not submitted."}</p>
-        <Button type="submit" variant="primary" appearance="solid" size="xl" shape="pill"><ButtonLabel>Explore this statement</ButtonLabel><Glyph name="arrow" size={18} /></Button>
-      </form><div className={styles.claimResponse}><InlineAlert variant={checkedClaim ? "warning" : "neutral"} appearance="default" layout="vertical" role="status"><InlineAlertIcon><Glyph name={checkedClaim ? "search" : "file"} size={20} /></InlineAlertIcon><InlineAlertContent><InlineAlertHeading><InlineAlertTitle>{checkedClaim ? "Policy wording needed" : "Evidence before an answer"}</InlineAlertTitle><InlineAlertDescription>{checkedClaim ? "This statement has not been verified. A policy document, source clause and verification date are needed." : "No document is connected to this preview. No policy-specific result can be shown."}</InlineAlertDescription></InlineAlertHeading></InlineAlertContent></InlineAlert>{checkedClaim && <blockquote>{checkedClaim}</blockquote>}</div></ReflectiveSurface>
+      <ReflectiveSurface className={styles.claimCard}>
+        <Badge variant="primary" appearance="soft" size="md" shape="pill" leading={<Glyph name="search" size={15} />}>Statement explorer</Badge>
+        <h3>What did they tell you?</h3>
+        <p>Bring the statement to a private case. Sign in and choose your processing consent before sharing health details.</p>
+        <Button asChild variant="primary" appearance="solid" size="xl" shape="pill"><Link href="/workspace"><ButtonLabel>Open a private statement case</ButtonLabel><Glyph name="arrow" size={18} /></Link></Button>
+        <div className={styles.claimResponse}><InlineAlert variant="neutral" appearance="default" layout="vertical"><InlineAlertIcon><Glyph name="file" size={20} /></InlineAlertIcon><InlineAlertContent><InlineAlertHeading><InlineAlertTitle>Evidence before an answer</InlineAlertTitle><InlineAlertDescription className="line-clamp-none">Policy-specific conclusions require sourced evidence and the report release checks. Signing in does not grant insurance consent.</InlineAlertDescription></InlineAlertHeading></InlineAlertContent></InlineAlert></div>
+      </ReflectiveSurface>
     </section>
 
     <section className={styles.trust} id="trust" aria-labelledby="trust-heading">
@@ -87,6 +85,6 @@ export default function LandingExperience() {
     </section>
 
     <section className={styles.faq} id="faq" aria-labelledby="faq-heading"><div data-reveal><p className={styles.kicker}><span /> BEFORE YOU SET OFF</p><h2 className={styles.heading} id="faq-heading">A little more<br /><em>clarity.</em></h2><p className={styles.lede}>A few things to know about this preview.</p></div><div className={styles.faqContent} data-reveal><p className={styles.faqLabel}>THE SHORT ANSWERS / 03</p><Accordion type="single" collapsible appearance="ghost-underline">{questions.map((question, i) => <AccordionItem key={question.title} value={`question-${i}`}><AccordionTrigger><span className={styles.faqQuestion}><span className={styles.faqNumber} aria-hidden="true">{String(i + 1).padStart(2, "0")}</span>{question.title}</span></AccordionTrigger><AccordionContent>{question.answer}</AccordionContent></AccordionItem>)}</Accordion></div></section>
-    <section className={styles.departure} aria-labelledby="departure-heading" data-reveal><span className={styles.departureStar} aria-hidden="true">✦</span><p className={styles.kicker}>YOUR NEXT CHAPTER</p><h2 className={styles.heading} id="departure-heading">A little less uncertainty.<br /><em>A clearer next step.</em></h2><p>Start with what matters to you.</p><Button asChild variant="primary" appearance="solid" size="xl" shape="pill"><Link href="/intake"><ButtonLabel>Find my cover</ButtonLabel><Glyph name="arrow" size={18} /></Link></Button><span className={styles.departureNote}>Health insurance. At your own pace.</span></section>
+    <section className={styles.departure} aria-labelledby="departure-heading" data-reveal><span className={styles.departureStar} aria-hidden="true">✦</span><p className={styles.kicker}>YOUR NEXT CHAPTER</p><h2 className={styles.heading} id="departure-heading">A little less uncertainty.<br /><em>A clearer next step.</em></h2><p>Start with what matters to you.</p><Button asChild variant="primary" appearance="solid" size="xl" shape="pill"><Link href="/workspace"><ButtonLabel>Find my cover</ButtonLabel><Glyph name="arrow" size={18} /></Link></Button><span className={styles.departureNote}>Health insurance. At your own pace.</span></section>
   </LandingMotion>;
 }

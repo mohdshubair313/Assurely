@@ -16,9 +16,9 @@ import StatusPill from "@/components/ui/StatusPill";
 
 export interface AgentClaimCheckerProps {
   /** What the sales agent verbally claimed */
-  verbalClaim?: string;
+  verbalClaim: string;
   /** IRDAI verification finding */
-  irdaiFinding?: {
+  irdaiFinding: {
     matches: boolean;
     clause_wording: string;
     source: string;
@@ -26,34 +26,11 @@ export interface AgentClaimCheckerProps {
     case_citations?: string[];
   };
   /** ISO date of last verification check */
-  lastVerified?: string;
+  lastVerified: string;
 }
 
-const STUB_PROPS: AgentClaimCheckerProps = {
-  verbalClaim:
-    "Don't worry sir, all hospital rooms are 100% covered with no limit at all in this plan.",
-  irdaiFinding: {
-    matches: false,
-    clause_wording:
-      "Room and boarding expenses up to 1% of Sum Insured or ₹5,000/day, whichever is lower.",
-    source: "HDFC ERGO Optima Secure Policy Wordings 2024 · Section 4.2 · Page 12",
-    discrepancies: [
-      "Agent promised unlimited room rent — sworn policy filing caps rooms at ₹5,000/day",
-      "Proportional deduction penalty on higher rooms was omitted by the agent",
-    ],
-    case_citations: [
-      "Jacob Punnen & Anr. v. United India Insurance Co. Ltd. (2022 SC) — Insurer bound strictly by filed policy terms, not verbal promises.",
-    ],
-  },
-  lastVerified: "2024-01-01",
-};
-
 export default function AgentClaimChecker(props: AgentClaimCheckerProps) {
-  const {
-    verbalClaim = STUB_PROPS.verbalClaim!,
-    irdaiFinding = STUB_PROPS.irdaiFinding!,
-    lastVerified = STUB_PROPS.lastVerified!,
-  } = props;
+  const { verbalClaim, irdaiFinding, lastVerified } = props;
 
   const statusVariant = irdaiFinding.matches ? "verified" : "conflicting";
 

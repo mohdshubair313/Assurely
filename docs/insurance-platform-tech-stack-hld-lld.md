@@ -2,11 +2,25 @@
 
 Practical build reference: what to actually use, what to skip, and how to structure the codebase to match the architecture diagram.
 
+Implementation addendum (2026-11-03): migration 009 adds completed-turn checkpoint
+pointers and immutable recovery receipts. Non-development graph execution uses
+Postgres checkpoints, isolated issuer/session/turn threads, synchronous durability
+and a cross-worker execution lock. Verified owners can close an orphaned running
+turn without replaying side effects. Native saver schema setup is an explicit
+deployment operation. See [durable graph recovery](durable-graph-recovery.md).
+
+Implementation addendum (2026-11-03): the existing `guardrail` node now supports
+freshly revalidated scoped reviewed facts with mandatory advisor escalation.
+Approval covers selected product fields only; confidence is explicitly unavailable
+for this format. See [reviewed guardrail contract](reviewed-guardrail-contract.md).
+Only `explanation_report` writes output; independent advisor authorization and fresh
+transactional release checks remain required. No schema or graph edges changed.
+
 Implementation addendum (2026-11-03): migration 008 adds durable `report_heads` and
 append-only `report_release_receipts`. Non-development message boundaries invalidate
 old authority; owner-only status/release endpoints enforce current report, guardrail,
 advisor and fresh policy checks. See [release contract](report-release.md), including
-the remaining production guardrail hold and interrupted-turn recovery limitation.
+the remaining real-source/deployment gates and interrupted-turn recovery limitation.
 
 Implementation addendum (2026-11-02): migration 007 adds immutable `advisor_reports`
 and `advisor_decisions`, with separately authenticated snapshot/read/decision APIs.
@@ -402,3 +416,12 @@ Stage 4's job is specifically compliance and disclosure enforcement — worth th
 **Deployment scaling path.** Start with `docker-compose` on a single host — everything in this stack (FastAPI, Postgres, Redis, vector DB, n8n) runs fine there through real early usage. Move to Kubernetes only when a concrete trigger shows up: you need to scale the API/agent-runtime service independently of the database, you need zero-downtime deploys, or you have more than one environment (staging + prod) to keep consistent. Don't reach for K8s before one of those is true — it adds real operational overhead for no benefit at low traffic, and this architecture doesn't need GPU scheduling since every model call goes to an external API, not a self-hosted model.
 
 **Diagram status, still: no further changes needed.** Everything in sections 12–13 is a documentation and schema change, not a reason to touch Eraser again. See `insurance-platform-master-roadmap.md` for how all of this fits into an actual build sequence.
+# Clerk authentication amendment — 2026-11-04
+
+Migration `010_clerk_identity` adds an immutable-provider-subject to local-user-UUID
+binding, authentication audit events and explicit consent purpose versions.
+Existing user/session/decision/release ownership and graph routing are preserved.
+Clerk v2 tokens are independently verified by FastAPI; local operator UUID
+allowlists determine roles. Human advisor review and release additionally require
+an active assigned escalation. Architecture, route matrix, rollout/rollback and
+current constraints: [Clerk authentication](clerk-authentication.md).

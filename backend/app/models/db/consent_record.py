@@ -40,6 +40,9 @@ class ConsentRecord(Base):
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
     )
     scope: Mapped[str] = mapped_column(String(100), nullable=False)
+    purpose_version: Mapped[str] = mapped_column(
+        String(40), nullable=False, server_default="legacy-v0"
+    )
     granted_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=text("now()")
     )

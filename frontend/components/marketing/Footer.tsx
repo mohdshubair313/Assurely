@@ -10,7 +10,7 @@ export default function Footer() {
       <div className={styles.footerNote}><span className={styles.star} aria-hidden="true">✦</span><span>A calmer place<br />to begin.</span></div>
     </div>
     <div className={styles.footerBottom}>
-      <span>Health insurance · India</span><span>Design preview · Policy examples are unverified</span><Link href="/intake">Start with your needs ↗</Link><a href="https://rareui.com" target="_blank" rel="noreferrer">Folder component by Rare UI ↗</a>
+      <span>Health insurance · India</span><span>Design preview · Policy examples are unverified</span><Link href="/workspace">Start with your needs ↗</Link><a href="https://rareui.com" target="_blank" rel="noreferrer">Folder component by Rare UI ↗</a>
     </div>
   </footer>;
 }

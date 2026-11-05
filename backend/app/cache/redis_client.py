@@ -41,8 +41,9 @@ async def get_redis_client() -> Any | None:
             socket_timeout=2.0,
         )
         return _redis_client
-    except Exception as e:
-        logger.warning("Could not connect to Redis at %s: %s", settings.redis_url, e)
+    except Exception:
+        # Connection URLs can contain passwords; diagnostics must not export them.
+        logger.warning("Redis client initialization failed")
         return None
 
 

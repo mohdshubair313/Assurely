@@ -14,12 +14,27 @@ from sqlalchemy import select, text
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
 from app.core.correlation import database_session_id
 from app.db.policy_review_store import Reviewer, WorkflowError
 from app.db.reviewed_delivery import check_reviewed_delivery
 from app.db.source_review import ClosedModel
 from app.models.db.advisor_review import AdvisorDecision, AdvisorReport
+from app.models.db.escalation import Escalation
 from app.models.db.session import Session
+
+
+async def require_assignment(db: AsyncSession, actor: Reviewer, session_id: uuid.UUID) -> None:
+    """Clerk advisors may access only an explicitly assigned active escalation."""
+    if get_settings().auth_provider != "clerk":
+        return  # Retained legacy workflow during an operator-controlled rollout.
+    assignment = await db.scalar(select(Escalation).where(
+        Escalation.session_id == session_id,
+        Escalation.assigned_advisor == actor.subject,
+        Escalation.status.in_(["assigned", "in_review"]),
+    ).with_for_update())
+    if assignment is None:
+        raise WorkflowError(403, "An assigned human advisor is required.")
 
 
 class DecisionCommand(ClosedModel):
@@ -113,6 +128,7 @@ async def stage(
     digest = _digest(actor.issuer, session_id, owner, snapshot)
     # Same order for staging and decisions: report lock, then publication locks.
     await _lock(db, digest)
+    await require_assignment(db, actor, session_id)
     check = await check_reviewed_delivery(db, actor.issuer, snapshot)
     if not check.evidence_current:
         raise WorkflowError(409, "Report evidence is not available for advisor review.")
@@ -145,6 +161,7 @@ async def _row(db: AsyncSession, actor: Reviewer, digest: str) -> AdvisorReport:
         raise WorkflowError(404, "Advisor report not found.")
     if actor.subject == row.owner_id:
         raise WorkflowError(403, "Independent advisor review is required.")
+    await require_assignment(db, actor, row.session_id)
     if _digest(row.issuer, row.session_id, row.owner_id, row.snapshot) != row.digest:
         raise WorkflowError(409, "Advisor report integrity check failed.")
     session = await db.get(Session, row.session_id)

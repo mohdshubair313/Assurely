@@ -36,10 +36,12 @@ async def get_session(
     ] = None,
 ) -> SessionDetailResponse:
     """Retrieve session audit state with ownership verification."""
-    from app.api.v1.message import _app_graph, build_delivery_response
+    from app.api.v1.message import build_delivery_response, get_app_graph
+    from app.graph.runtime import read_config
 
     db_session_id = database_session_id(session_id)
-    checkpoint = await _app_graph.aget_state({"configurable": {"thread_id": session_id}})
+    config = await read_config(session_id)
+    checkpoint: Any = await get_app_graph().aget_state(config) if config is not None else None
     has_checkpoint = bool(
         checkpoint and checkpoint.values and checkpoint.values.get("messages")
     )

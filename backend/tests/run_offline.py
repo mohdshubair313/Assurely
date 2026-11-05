@@ -23,9 +23,14 @@ def main() -> int:
         "LANGFUSE_PUBLIC_KEY", "LANGFUSE_SECRET_KEY",
         "ADVISOR_WEBHOOK_URL", "ADVISOR_WEBHOOK_TOKEN",
         "AUTH_ISSUER", "AUTH_AUDIENCE", "AUTH_JWKS_URL",
+        "CLERK_PUBLISHABLE_KEY", "CLERK_SECRET_KEY",
+        "BACKEND_GATEWAY_TOKEN",
     ):
         os.environ[name] = ""
     os.environ["DATABASE_URL"] = "postgresql+asyncpg://offline:offline@127.0.0.1:1/offline"
+    os.environ["AUTH_PROVIDER"] = "legacy_oidc"
+    for name in ("AUTH_AUTHORIZED_PARTIES", "ADMIN_SUBJECTS", "AUTH_TEST_SUBJECTS"):
+        os.environ[name] = "[]"
     os.environ["REDIS_URL"] = "redis://127.0.0.1:1/0"
     os.environ["CHROMA_HOST"] = "127.0.0.1"
     os.environ["CHROMA_PORT"] = "1"

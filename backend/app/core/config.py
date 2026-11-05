@@ -28,6 +28,7 @@ class Settings(BaseSettings):
         default="development", description="development | staging | production"
     )
     log_level: str = Field(default="info", description="Logging level")
+    cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:3000"])
 
     # Mandatory restricted diagnostics. Linux file permissions are verified at startup.
     exception_log_dir: str = "/var/log/insuranceai/private"
@@ -40,6 +41,16 @@ class Settings(BaseSettings):
     auth_issuer: str = ""
     auth_audience: str = ""
     auth_jwks_url: str = ""
+    clerk_publishable_key: str = ""
+    clerk_secret_key: SecretStr = SecretStr("")
+    # Explicit migration switch; never infer the provider from untrusted claims.
+    auth_provider: str = "legacy_oidc"
+    auth_authorized_parties: list[str] = Field(default_factory=list)
+    admin_subjects: list[str] = Field(default_factory=list)
+    # Operator-designated test identities can never exercise privileged roles.
+    auth_test_subjects: list[str] = Field(default_factory=list)
+    # Server-to-server ingress control, independent of customer/operator JWT roles.
+    backend_gateway_token: SecretStr = SecretStr("")
 
     # Explicit operator-managed subjects under AUTH_ISSUER; no client role claim.
     # Empty disables policy-review APIs. Never populated from customer profile data.

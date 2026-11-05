@@ -31,7 +31,7 @@ export default function FinalCTA() {
           what your policy actually says — with no pressure to buy anything.
         </p>
 
-        <a href="/intake" className="inline-block">
+        <a href="/workspace" className="inline-block">
           <Button size="lg" variant="primary">
             Find my cover
           </Button>

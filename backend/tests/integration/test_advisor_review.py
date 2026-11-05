@@ -259,6 +259,9 @@ async def test_advisor_migration_reverses_only_before_snapshots(database, public
     release_migration = runpy.run_path(str(
         Path(__file__).parents[2] / "alembic/versions/008_report_release.py"
     ))
+    recovery_migration = runpy.run_path(str(
+        Path(__file__).parents[2] / "alembic/versions/009_turn_recovery.py"
+    ))
 
     def run(conn, action):
         with Operations.context(MigrationContext.configure(conn)):
@@ -267,6 +270,7 @@ async def test_advisor_migration_reverses_only_before_snapshots(database, public
     async with engine.begin() as conn:
         def undo_release(connection):
             with Operations.context(MigrationContext.configure(connection)):
+                recovery_migration["downgrade"]()
                 release_migration["downgrade"]()
         await conn.run_sync(undo_release)
         await conn.run_sync(run, "downgrade")
@@ -274,6 +278,7 @@ async def test_advisor_migration_reverses_only_before_snapshots(database, public
         def redo_release(connection):
             with Operations.context(MigrationContext.configure(connection)):
                 release_migration["upgrade"]()
+                recovery_migration["upgrade"]()
         await conn.run_sync(redo_release)
     state, _, _ = await prepare(factory, publication_input)
     await stage(factory, state)

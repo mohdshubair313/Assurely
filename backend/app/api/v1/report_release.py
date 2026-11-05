@@ -10,11 +10,36 @@ from app.api.v1.policy_reviews import _body
 from app.core.config import get_settings
 from app.core.security import require_authenticated_user_id
 from app.db import report_release as store
+from app.db import turn_recovery
 from app.db.policy_review_store import WorkflowError
 from app.db.session import AsyncSessionLocal
 
 router = APIRouter(prefix="/sessions")
 Owner = Annotated[uuid.UUID, Depends(require_authenticated_user_id)]
+
+
+@router.post("/{session_id}/recover-turn")
+async def recover_turn(session_id: str, request: Request, owner: Owner) -> dict[str, Any]:
+    settings = get_settings()
+    if settings.environment == "development":
+        raise HTTPException(409, "Durable recovery is unavailable in development mode.")
+    try:
+        command = turn_recovery.RecoveryCommand.model_validate_json(
+            json.dumps(await _body(request, 16_384))
+        )
+    except ValueError as exc:
+        raise HTTPException(422, "Invalid recovery request.") from exc
+    try:
+        async with (
+            turn_recovery.execution_guard(settings.auth_issuer, session_id),
+            AsyncSessionLocal() as db, db.begin(),
+        ):
+            result = await turn_recovery.recover(
+                db, settings.auth_issuer, session_id, owner, command,
+            )
+        return result
+    except WorkflowError as exc:
+        raise HTTPException(exc.status, str(exc)) from exc
 
 
 @router.get("/{session_id}/report-status")
@@ -44,6 +69,7 @@ async def release(session_id: str, request: Request, owner: Owner) -> dict[str, 
         raise HTTPException(409, "Reviewed report release is disabled in development mode.")
     try:
         advisors = {uuid.UUID(value) for value in settings.advisor_subjects}
+        advisors -= {uuid.UUID(value) for value in getattr(settings, "auth_test_subjects", [])}
     except (ValueError, TypeError, AttributeError) as exc:
         raise HTTPException(503, "Advisor authorization is not configured.") from exc
     try:

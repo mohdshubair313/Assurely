@@ -14,11 +14,11 @@ import uuid
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from langchain_core.runnables import RunnableConfig
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
 from app.core.config import get_settings
+from app.core.consent import CONSENT_VERSION
 from app.core.correlation import current_turn, database_session_id
 from app.core.security import optional_authenticated_user_id, require_matching_user_id
 from app.core.tracing import request_trace
@@ -28,7 +28,9 @@ from app.db.policy_rule_draft import _unique_object
 from app.db.reviewed_comparison import ComparisonRequest
 from app.db.reviewed_delivery import check_reviewed_delivery, is_reviewed
 from app.db.session import AsyncSessionLocal
+from app.db.turn_recovery import execution_guard
 from app.graph.build_graph import build_graph
+from app.graph.runtime import read_config, turn_config
 from app.graph.state import create_initial_state
 from app.guardrails.input_validation import MAX_MESSAGE_CHARS, prepare_messages
 from app.models.db.consent_record import ConsentRecord
@@ -39,6 +41,15 @@ router = APIRouter()
 
 # Graph instance cached for application lifetime
 _app_graph = build_graph()
+_production_graph: Any = None
+
+
+def get_app_graph() -> Any:
+    if get_settings().environment == "development":
+        return _app_graph
+    if _production_graph is None:
+        raise HTTPException(503, "Durable graph runtime is unavailable.")
+    return _production_graph
 
 
 class MessageRequest(BaseModel):
@@ -218,11 +229,24 @@ async def send_message(
         saved_profile: dict[str, Any] = {}
         if user_id is not None:
             async with AsyncSessionLocal() as db:
+                if get_settings().auth_provider == "clerk":
+                    allowed = await db.scalar(select(ConsentRecord.id).where(
+                        ConsentRecord.user_id == user_id,
+                        ConsentRecord.scope == "process_comparison",
+                        ConsentRecord.purpose_version == CONSENT_VERSION,
+                        ConsentRecord.revoked_at.is_(None),
+                    ))
+                    if allowed is None:
+                        raise HTTPException(
+                            403, "Current comparison-processing consent is required."
+                        )
                 result = await db.execute(
                     select(ConsentRecord.scope).where(
                         ConsentRecord.user_id == user_id,
                         ConsentRecord.scope == "save_profile",
                         ConsentRecord.revoked_at.is_(None),
+                        *([ConsentRecord.purpose_version == CONSENT_VERSION]
+                          if get_settings().auth_provider == "clerk" else []),
                     )
                 )
                 scopes = list(result.scalars().all())
@@ -231,106 +255,114 @@ async def send_message(
                     if memory is not None and isinstance(memory.profile_snapshot_json, dict):
                         saved_profile = memory.profile_snapshot_json
             consent = {"granted": bool(scopes), "scopes": scopes}
-        with request_trace(
-            req.session_id,
-            message_char_count=len(req.user_message),
-        ) as trace:
-            config: RunnableConfig = {"configurable": {"thread_id": req.session_id}}
-            current_checkpoint = await _app_graph.aget_state(config)
+        async with execution_guard(get_settings().auth_issuer, req.session_id) as lease:
+            with request_trace(
+                req.session_id,
+                message_char_count=len(req.user_message),
+            ) as trace:
+                graph = get_app_graph()
+                config = await read_config(req.session_id)
+                current_checkpoint = await graph.aget_state(config) if config is not None else None
 
-            if (
-                current_checkpoint
-                and current_checkpoint.values
-                and current_checkpoint.values.get("messages")
-            ):
-                prior_user_id = current_checkpoint.values.get("user_id")
-                requested_user_id = str(user_id) if user_id else None
-                if prior_user_id is not None:
-                    if requested_user_id is None:
+                if (
+                    current_checkpoint
+                    and current_checkpoint.values
+                    and current_checkpoint.values.get("messages")
+                ):
+                    prior_user_id = current_checkpoint.values.get("user_id")
+                    requested_user_id = str(user_id) if user_id else None
+                    if prior_user_id is not None:
+                        if requested_user_id is None:
+                            raise HTTPException(
+                                status_code=401,
+                                detail="An authenticated session cannot be continued anonymously.",
+                            )
+                        if prior_user_id != requested_user_id:
+                            raise HTTPException(
+                                status_code=403,
+                                detail="You do not have permission to continue this session.",
+                            )
+                    elif requested_user_id is not None:
                         raise HTTPException(
-                            status_code=401,
-                            detail="An authenticated session cannot be continued anonymously.",
+                            status_code=409,
+                            detail="The user_id for an existing session cannot be changed.",
                         )
-                    if prior_user_id != requested_user_id:
-                        raise HTTPException(
-                            status_code=403,
-                            detail="You do not have permission to continue this session.",
-                        )
-                elif requested_user_id is not None:
-                    raise HTTPException(
-                        status_code=409,
-                        detail="The user_id for an existing session cannot be changed.",
+                    # Multi-turn continuation: append user message to existing state
+                    prev_messages = list(current_checkpoint.values.get("messages", []))
+                    new_messages = prepare_messages(
+                        prev_messages + [{"role": "user", "content": req.user_message}]
                     )
-                # Multi-turn continuation: append user message to existing state
-                prev_messages = list(current_checkpoint.values.get("messages", []))
-                new_messages = prepare_messages(
-                    prev_messages + [{"role": "user", "content": req.user_message}]
-                )
-                # Reset prior approval if intake/intent exits before the delivery gate.
-                input_state: dict[str, Any] = {
-                    "messages": new_messages,
-                    "user_id": requested_user_id,
-                    "consent": consent,
-                    "approved": False,
-                    "delivery_hold": True,
-                    # Never reuse a previous turn's scenario implicitly.
-                    "reviewed_comparison_request": scenario,
-                }
-            else:
-                input_state = dict(
-                    create_initial_state(
-                        session_id=req.session_id,
-                        user_message=None,
-                        user_id=str(user_id) if user_id else None,
-                        consent=consent,
-                        user_profile=saved_profile,
-                        target_language=req.target_language or "",
-                    )
-                )
-                input_state["messages"] = prepare_messages(
-                    [{"role": "user", "content": req.user_message}]
-                )
-                input_state["reviewed_comparison_request"] = scenario
-            if turn is not None:
-                turn.profile_snapshot = input_state.get("user_profile")
-
-            settings = get_settings()
-            durable_turn = None
-            if settings.environment != "development":
-                async with AsyncSessionLocal() as db, db.begin():
-                    durable_turn = await report_release.begin_turn(
-                        db, settings.auth_issuer, req.session_id, user_id,
-                    )
-            try:
-                final_state = await _app_graph.ainvoke(input_state, config=config)
-                if durable_turn is not None:
-                    async with AsyncSessionLocal() as db, db.begin():
-                        await report_release.finish_turn(
-                            db, settings.auth_issuer, req.session_id, durable_turn, final_state,
-                        )
-            except Exception:
-                if durable_turn is not None:
-                    async with AsyncSessionLocal() as db, db.begin():
-                        await report_release.finish_turn(
-                            db, settings.auth_issuer, req.session_id, durable_turn, None,
-                        )
-                raise
-            # Attach profile to turn context for PII scrubbing in exception logs.
-            if turn is not None:
-                turn.profile_snapshot = final_state.get("user_profile") or input_state.get(
-                    "user_profile"
-                )
-            response = await build_delivery_response(req.session_id, final_state)
-            if trace is not None:
-                trace.update(
-                    output={
-                        "approved": response.approved,
-                        "escalation": response.escalation,
-                        "delivery_hold": response.delivery_hold,
-                        "notification_status": response.notification_status,
-                        "missing_field_count": len(response.missing_fields),
+                    # Reset prior approval if intake/intent exits before the delivery gate.
+                    input_state: dict[str, Any] = {
+                        **current_checkpoint.values,
+                        "messages": new_messages,
+                        "user_id": requested_user_id,
+                        "consent": consent,
+                        "approved": False,
+                        "delivery_hold": True,
+                        # Never reuse a previous turn's scenario implicitly.
+                        "reviewed_comparison_request": scenario,
                     }
-                )
+                else:
+                    input_state = dict(
+                        create_initial_state(
+                            session_id=req.session_id,
+                            user_message=None,
+                            user_id=str(user_id) if user_id else None,
+                            consent=consent,
+                            user_profile=saved_profile,
+                            target_language=req.target_language or "",
+                        )
+                    )
+                    input_state["messages"] = prepare_messages(
+                        [{"role": "user", "content": req.user_message}]
+                    )
+                    input_state["reviewed_comparison_request"] = scenario
+                if turn is not None:
+                    turn.profile_snapshot = input_state.get("user_profile")
+
+                settings = get_settings()
+                durable_turn = None
+                if settings.environment != "development":
+                    async with AsyncSessionLocal() as db, db.begin():
+                        durable_turn = await report_release.begin_turn(
+                            db, settings.auth_issuer, req.session_id, user_id,
+                        )
+                    config = turn_config(settings.auth_issuer, req.session_id, durable_turn)
+                else:
+                    config = {"configurable": {"thread_id": req.session_id}}
+                try:
+                    final_state = await graph.ainvoke(input_state, config=config, durability="sync")
+                    if durable_turn is not None:
+                        if lease is not None:
+                            await lease.execute(select(1))
+                        async with AsyncSessionLocal() as db, db.begin():
+                            await report_release.finish_turn(
+                                db, settings.auth_issuer, req.session_id, durable_turn, final_state,
+                            )
+                except Exception:
+                    if durable_turn is not None:
+                        async with AsyncSessionLocal() as db, db.begin():
+                            await report_release.finish_turn(
+                                db, settings.auth_issuer, req.session_id, durable_turn, None,
+                            )
+                    raise
+                # Attach profile to turn context for PII scrubbing in exception logs.
+                if turn is not None:
+                    turn.profile_snapshot = final_state.get("user_profile") or input_state.get(
+                        "user_profile"
+                    )
+                response = await build_delivery_response(req.session_id, final_state)
+                if trace is not None:
+                    trace.update(
+                        output={
+                            "approved": response.approved,
+                            "escalation": response.escalation,
+                            "delivery_hold": response.delivery_hold,
+                            "notification_status": response.notification_status,
+                            "missing_field_count": len(response.missing_fields),
+                        }
+                    )
 
         return response
     except WorkflowError as exc:

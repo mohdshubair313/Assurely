@@ -17,10 +17,13 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
 
+from app.core.config import get_settings
+from app.core.consent import CONSENT_VERSION
 from app.core.correlation import SESSION_NAMESPACE, current_turn, database_session_id
 from app.core.tracing import current_llm_metadata
 from app.db.session import AsyncSessionLocal
 from app.graph.state import SessionState
+from app.models.db.consent_record import ConsentRecord
 from app.models.db.decision_trace import DecisionTrace
 from app.models.db.session import Session as DBSession
 from app.models.db.user import User
@@ -330,6 +333,14 @@ async def persist_memory_node(state: SessionState) -> dict[str, Any]:
         )
         db.add(trace)
         save_profile = not input_rejected and _profile_memory_consent_granted(state)
+        if save_profile and get_settings().auth_provider == "clerk":
+            # Use the same row lock as revocation, not stale graph consent state.
+            active_receipt = await db.scalar(select(ConsentRecord.id).where(
+                ConsentRecord.user_id == user_id, ConsentRecord.scope == "save_profile",
+                ConsentRecord.purpose_version == CONSENT_VERSION,
+                ConsentRecord.revoked_at.is_(None),
+            ).with_for_update())
+            save_profile = active_receipt is not None
         if save_profile:
             await db.execute(
                 insert(UserProfileMemory)

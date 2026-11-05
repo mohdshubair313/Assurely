@@ -18,7 +18,7 @@ export default function HeroSection() {
         <h1 id="hero-title" className={styles.title}>Less guesswork.<br /><em>More peace of mind.</em></h1>
         <p className={styles.description}>Understand the fine print, explore the trade-offs,<br className={styles.desktopBreak} /> and find cover that fits your life.</p>
         <div className={styles.actions}>
-          <Link className={styles.primary} href="/intake">Find my cover <Glyph name="arrow" size={18} /></Link>
+          <Link className={styles.primary} href="/workspace">Find my cover <Glyph name="arrow" size={18} /></Link>
           <Link className={styles.secondary} href="/#how-it-works">See how it works <span aria-hidden="true">↗</span></Link>
         </div>
         <p className={styles.caption}>Your needs. Your pace. No pressure to buy.</p>

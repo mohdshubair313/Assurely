@@ -19,6 +19,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Literal, cast
 
+from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
@@ -78,7 +79,7 @@ def route_after_intent(
 
 
 def build_graph(
-    checkpointer: MemorySaver | None = None,
+    checkpointer: BaseCheckpointSaver[Any] | None = None,
 ) -> CompiledStateGraph[Any, Any, Any, Any]:
     """Build and compile the LangGraph workflow.
 
