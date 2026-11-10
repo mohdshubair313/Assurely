@@ -29,6 +29,8 @@ class Settings(BaseSettings):
     )
     log_level: str = Field(default="info", description="Logging level")
     cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:3000"])
+    # Explicitly restrict the whole local API while it is exposed through a test tunnel.
+    tunnel_ingress_only: bool = False
 
     # Mandatory restricted diagnostics. Linux file permissions are verified at startup.
     exception_log_dir: str = "/var/log/insuranceai/private"
@@ -58,6 +60,8 @@ class Settings(BaseSettings):
     # Independent authority for publication/revocation; empty disables publication.
     policy_publisher_subjects: list[str] = Field(default_factory=list)
     advisor_subjects: list[str] = Field(default_factory=list)
+    # Separate from voice subscriptions; does not authorize delivery or dispatch.
+    human_review_requests_enabled: bool = False
 
     # ── Database ────────────────────────────────────────────────────────
     database_url: str = Field(
@@ -116,6 +120,38 @@ class Settings(BaseSettings):
     advisor_webhook_timeout_seconds: float = Field(default=5.0, gt=0, le=30)
     advisor_webhook_max_attempts: int = Field(default=3, ge=1, le=5)
     advisor_webhook_retry_delay_seconds: float = Field(default=0.25, ge=0, le=5)
+
+    # Voice stays closed unless explicitly enabled. The mock provider can only
+    # issue non-billable test entitlements to these server-allowlisted UUIDs.
+    voice_provider: str = Field(default="disabled", pattern="^(disabled|mock|vaani)$")
+    voice_recovery_interval_seconds: int = Field(default=5, ge=1, le=300)
+    voice_test_subjects: list[str] = Field(default_factory=list)
+    voice_test_allowance_minutes: int = Field(default=15, ge=1, le=600)
+    voice_max_call_seconds: int = Field(default=300, ge=30, le=1800)
+    voice_max_concurrent_calls: int = Field(default=1, ge=1, le=5)
+    vaani_api_key: SecretStr = SecretStr("")
+    vaani_agent_id: str = ""
+    vaani_webhook_secret: SecretStr = SecretStr("")
+    vaani_byol_token: SecretStr = SecretStr("")
+    vaani_dispatch_enabled: bool = False
+    vaani_ingress_enabled: bool = False
+    vaani_byol_enabled: bool = False
+    vaani_dev_agent_reviewed: bool = False
+    vaani_staging_base_url: str = ""
+    # Independent opt-ins; never inferred from credentials or a browser request.
+    voice_development_enabled: bool = False
+    voice_tools_enabled: bool = False
+    voice_case_binding_enabled: bool = False
+    voice_byol_evidence_enabled: bool = False
+    voice_billing_test_enabled: bool = False
+    voice_funded_test_enabled: bool = False
+    voice_token_encryption_key: SecretStr = SecretStr("")
+    voice_summary_retention_hours: int = Field(default=24, ge=1, le=168)
+    razorpay_test_key_id: str = ""
+    razorpay_test_key_secret: SecretStr = SecretStr("")
+    razorpay_test_webhook_secret: SecretStr = SecretStr("")
+    voice_test_plan_id: str = ""
+    voice_test_plan_seconds: int = Field(default=0, ge=0, le=360000)
 
 
 def get_settings() -> Settings:

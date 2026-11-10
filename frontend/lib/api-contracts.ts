@@ -80,6 +80,31 @@ export const reportStatusResponse: Decoder<ReportStatus> = value => {
   const data = object(value); if (data.delivery_hold !== true) throw new ContractError();
   return { turn_id: identifier(data.turn_id), report_digest: data.report_digest === null ? null : digest(data.report_digest), status: oneOf(data.status, ["running", "complete", "failed"]), delivery_hold: true };
 };
+export interface HumanReviewRequest {
+  request_id: string; session_id: string; status: "pending" | "assigned" | "in_review" | "decision_recorded";
+  requested_at: string; delivery_hold: true; human_connected: false; notification_dispatched: false;
+}
+export function humanReviewCommand(value: unknown) {
+  const data = closed(value, ["request_key"]);
+  return { request_key: identifier(data.request_key) };
+}
+/** This closed command contains exactly one JSON string member; reject duplicates
+ * before JSON.parse can discard them, including escaped duplicate member names. */
+export function humanReviewJSONCommand(raw: string) {
+  if (!/^\s*\{\s*"(?:[^"\\]|\\.)*"\s*:\s*"(?:[^"\\]|\\.)*"\s*\}\s*$/.test(raw)) throw new ContractError();
+  return humanReviewCommand(JSON.parse(raw));
+}
+export const humanReviewResponse: Decoder<HumanReviewRequest | null> = value => {
+  const envelope = closed(value, ["request"]);
+  if (envelope.request === null) return null;
+  const data = closed(envelope.request, ["request_id", "session_id", "status", "requested_at", "delivery_hold", "human_connected", "notification_dispatched"]);
+  if (data.delivery_hold !== true || data.human_connected !== false || data.notification_dispatched !== false) throw new ContractError();
+  const requested_at = verifiedDate(data.requested_at);
+  if (!/(?:Z|[+-]\d{2}:\d{2})$/.test(requested_at)) throw new ContractError();
+  return { request_id: identifier(data.request_id), session_id: identifier(data.session_id),
+    status: oneOf(data.status, ["pending", "assigned", "in_review", "decision_recorded"]), requested_at,
+    delivery_hold: true, human_connected: false, notification_dispatched: false };
+};
 export interface Review { report_digest: string; session_id: string; report: Report; revision: number; review_status: string; scenario: Scenario }
 export const reviewResponse: Decoder<Review> = value => {
   const data = object(value); if (data.customer_delivery_authorized !== false) throw new ContractError();
@@ -106,14 +131,21 @@ export const scenario: Decoder<Scenario> = value => {
   }, 5);
   if (!items.length || new Set(items.map(item => item.publication_digest)).size !== items.length) throw new ContractError(); return { items };
 };
-export const scopes = ["process_comparison", "save_profile", "receive_updates"] as const;
+export const scopes = ["process_comparison", "save_profile", "receive_updates", "voice_demo", "voice_microphone", "voice_vendor_processing", "voice_transcription", "voice_summary", "voice_report_speech"] as const;
 export type ConsentScope = typeof scopes[number];
 export const consentVersion = "2026-11-04";
+export const voiceConsentVersion = "voice-2026-11-05";
+export const voiceReportSpeechConsentVersion = "voice-report-speech-2026-11-09";
+export function purposeVersion(scope: ConsentScope) {
+  return scope === "voice_report_speech" ? voiceReportSpeechConsentVersion : scope.startsWith("voice_") ? voiceConsentVersion : consentVersion;
+}
 export function consentRequest(value: unknown) {
   const data = object(value); if (Object.keys(data).some(key => !["scope", "action", "purpose_version"].includes(key))) throw new ContractError();
-  if (data.purpose_version !== undefined && data.purpose_version !== consentVersion) throw new ContractError();
-  return { scope: oneOf(data.scope, scopes), action: oneOf(data.action, ["grant", "revoke"]),
-    ...(data.purpose_version === undefined ? {} : { purpose_version: consentVersion }) };
+  const selectedScope = oneOf(data.scope, scopes);
+  const expectedVersion = purposeVersion(selectedScope);
+  if (data.purpose_version !== undefined && data.purpose_version !== expectedVersion) throw new ContractError();
+  return { scope: selectedScope, action: oneOf(data.action, ["grant", "revoke"]),
+    ...(data.purpose_version === undefined ? {} : { purpose_version: expectedVersion }) };
 }
 export function messageRequest(value: unknown) {
   const data = object(value); if (Object.keys(data).some(key => !["session_id", "user_message", "reviewed_comparison_request"].includes(key))) throw new ContractError();

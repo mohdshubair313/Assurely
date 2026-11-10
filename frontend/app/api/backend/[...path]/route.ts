@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { accessToken, sameOrigin } from "@/lib/server-session";
 import { ContractError, object, identifier, messageRequest, consentRequest, decisionRequest, digest } from "@/lib/api-contracts";
+import { humanReviewCommand, humanReviewJSONCommand } from "@/lib/api-contracts";
+import { bindCaseCommand, bindCaseJSONCommand } from "@/lib/voice/case-contracts";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -10,11 +12,29 @@ const uuid = "[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-
 const digestPattern = "[a-f0-9]{64}";
 const routes: [string, RegExp][] = [
   ["GET", /^me(?:\/consents)?$/],
+  ["GET", /^voice\/entitlement$/],
+  ["GET", /^voice\/active$/],
+  ["GET", /^voice\/development\/(?:availability|release-status)$/],
+  ["POST", /^voice\/development\/(?:sessions|billing\/checkout)$/],
+  ["GET", new RegExp(`^voice/development/cases/${uuid}/evidence$`)],
+  ["POST", new RegExp(`^voice/development/cases/${uuid}/turn$`)],
+  ["POST", /^voice\/development\/recaps$/],
+  ["GET", new RegExp(`^voice/development/recaps/${uuid}$`)],
+  ["DELETE", new RegExp(`^voice/development/recaps/${uuid}$`)],
+  ["GET", new RegExp(`^voice/development/sessions/${uuid}(?:/authorization)?$`)],
+  ["POST", new RegExp(`^voice/development/sessions/${uuid}/(?:connect|end)$`)],
+  ["GET", new RegExp(`^voice/development/sessions/${uuid}/(?:case-binding|captions)$`)],
+  ["POST", new RegExp(`^voice/development/sessions/${uuid}/case-binding$`)],
+  ["POST", /^voice\/sessions$/],
+  ["GET", new RegExp(`^voice/sessions/${uuid}$`)],
+  ["POST", new RegExp(`^voice/sessions/${uuid}/(?:end|turn)$`)],
   ["POST", /^message$/],
   ["POST", /^consent$/],
   ["DELETE", /^profile-memory$/],
   ["GET", new RegExp(`^session/${uuid}$`)],
   ["GET", new RegExp(`^sessions/${uuid}/report-status$`)],
+  ["GET", new RegExp(`^sessions/${uuid}/human-review$`)],
+  ["POST", new RegExp(`^sessions/${uuid}/human-review$`)],
   ["POST", new RegExp(`^sessions/${uuid}/(?:report-release|recover-turn)$`)],
   ["POST", new RegExp(`^advisor-reviews/sessions/${uuid}/snapshot$`)],
   ["GET", new RegExp(`^advisor-reviews/${digestPattern}$`)],
@@ -26,6 +46,37 @@ function command(path: string, value: unknown): unknown {
   const data = object(value);
   if (path === "message") return messageRequest(data);
   if (path === "consent") return consentRequest(data);
+  if (/\/human-review$/.test(path)) return humanReviewCommand(data);
+  if (/\/case-binding$/.test(path)) return bindCaseCommand(data);
+  if (/^voice\/development\/cases\/.+\/turn$/.test(path)) {
+    if (Object.keys(data).length !== 1 || typeof data.text !== "string" || !data.text.trim() || data.text.length > 4000) throw new ContractError();
+    return { text: data.text };
+  }
+  if (path === "voice/development/recaps") {
+    if (Object.keys(data).some(key => !["idempotency_key", "case_id"].includes(key))) throw new ContractError();
+    return { idempotency_key: identifier(data.idempotency_key), case_id: identifier(data.case_id) };
+  }
+  if (["voice/development/sessions", "voice/development/billing/checkout"].includes(path)) {
+    if (Object.keys(data).length !== 1) throw new ContractError();
+    return { idempotency_key: identifier(data.idempotency_key) };
+  }
+  if (/^voice\/development\/sessions\//.test(path)) {
+    if (Object.keys(data).length) throw new ContractError();
+    return {};
+  }
+  if (path === "voice/sessions") {
+    if (Object.keys(data).some(key => !["language", "idempotency_key"].includes(key)) ||
+        !["en", "hi", "hinglish"].includes(String(data.language))) throw new ContractError();
+    return { language: data.language, idempotency_key: identifier(data.idempotency_key) };
+  }
+  if (/\/turn$/.test(path)) {
+    if (Object.keys(data).length !== 1 || !["copay", "estimate", "agent_claim", "human_review"].includes(String(data.prompt))) throw new ContractError();
+    return { prompt: data.prompt };
+  }
+  if (/\/end$/.test(path)) {
+    if (Object.keys(data).some(key => key !== "idempotency_key")) throw new ContractError();
+    return data.idempotency_key === undefined ? {} : { idempotency_key: identifier(data.idempotency_key) };
+  }
   if (/\/decisions$/.test(path)) return decisionRequest(data);
   if (/\/(report-release|recover-turn)$/.test(path)) {
     const allowed = path.endsWith("report-release") ? ["turn_id", "report_digest", "request_key"] : ["turn_id", "request_key"];
@@ -69,7 +120,7 @@ async function handle(request: Request, context: { params: Promise<{ path: strin
     try { body = writes ? await limitedText(request, 65_536) : undefined; }
     catch { return empty(413); }
     if (writes) {
-      try { body = JSON.stringify(command(path, JSON.parse(body ?? ""))); }
+      try { body = JSON.stringify(/\/human-review$/.test(path) ? humanReviewJSONCommand(body ?? "") : /\/case-binding$/.test(path) ? bindCaseJSONCommand(body ?? "") : command(path, JSON.parse(body ?? ""))); }
       catch { return NextResponse.json({ detail: "Check the entered details." }, { status: 422, headers: { "Cache-Control": "no-store" } }); }
     }
     const base = new URL(process.env.BACKEND_URL ?? "http://127.0.0.1:8000");

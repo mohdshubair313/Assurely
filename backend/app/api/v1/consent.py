@@ -13,7 +13,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.engine import CursorResult
 
 from app.core.config import get_settings
-from app.core.consent import CONSENT_VERSION
+from app.core.consent import purpose_version
 from app.core.security import require_authenticated_user_id, require_matching_user_id
 from app.db.session import AsyncSessionLocal
 from app.models.db.auth_identity import AuthEvent
@@ -27,7 +27,17 @@ router = APIRouter()
 class ConsentRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     user_id: uuid.UUID
-    scope: Literal["process_comparison", "save_profile", "receive_updates"]
+    scope: Literal[
+        "process_comparison",
+        "save_profile",
+        "receive_updates",
+        "voice_demo",
+        "voice_microphone",
+        "voice_vendor_processing",
+        "voice_transcription",
+        "voice_summary",
+        "voice_report_speech",
+    ]
     action: Literal["grant", "revoke"]
     purpose_version: str | None = Field(default=None, max_length=40)
 
@@ -53,8 +63,10 @@ async def update_consent(
     """Persist consent and immediately erase profile memory when consent is revoked."""
     require_matching_user_id(authenticated_user_id, req.user_id)
     clerk = get_settings().auth_provider == "clerk"
-    version = CONSENT_VERSION if clerk else (req.purpose_version or "legacy-v0")
-    if clerk and req.action == "grant" and req.purpose_version != CONSENT_VERSION:
+    voice_scope = req.scope.startswith("voice_")
+    current_version = purpose_version(req.scope)
+    version = current_version if clerk or voice_scope else (req.purpose_version or "legacy-v0")
+    if (clerk or voice_scope) and req.action == "grant" and req.purpose_version != current_version:
         raise HTTPException(422, "Read and accept the current consent purpose before granting.")
     now = datetime.now(UTC)
     async with AsyncSessionLocal() as db:
@@ -63,14 +75,26 @@ async def update_consent(
             .values(id=req.user_id, role="customer")
             .on_conflict_do_nothing(index_elements=[User.id])
         )
+        # Same order as voice start/end/recovery: entitlement before consent/session mutations.
+        # No microphone/vendor consent is inferred from this separate synthetic-demo purpose.
+        voice_entitlement = None
+        if voice_scope:
+            from app.voice.service import VoiceSessionService
+
+            voice_entitlement = await VoiceSessionService.lock_entitlement(db, req.user_id)
         if req.action == "grant":
             # Keep previous receipts; replace an old active version rather than relabel it.
             if clerk:
-                await db.execute(update(ConsentRecord).where(
-                    ConsentRecord.user_id == req.user_id,
-                    ConsentRecord.scope == req.scope, ConsentRecord.revoked_at.is_(None),
-                    ConsentRecord.purpose_version != version,
-                ).values(revoked_at=now))
+                await db.execute(
+                    update(ConsentRecord)
+                    .where(
+                        ConsentRecord.user_id == req.user_id,
+                        ConsentRecord.scope == req.scope,
+                        ConsentRecord.revoked_at.is_(None),
+                        ConsentRecord.purpose_version != version,
+                    )
+                    .values(revoked_at=now)
+                )
             await db.execute(
                 insert(ConsentRecord)
                 .values(user_id=req.user_id, scope=req.scope, purpose_version=version)
@@ -93,16 +117,61 @@ async def update_consent(
                 await db.execute(
                     delete(UserProfileMemory).where(UserProfileMemory.user_id == req.user_id)
                 )
+            if req.scope == "voice_demo" and voice_entitlement is not None:
+                service = VoiceSessionService(AsyncSessionLocal, get_settings())
+                await service.check_balance(db, voice_entitlement)
+                await service.expire_locked(
+                    db, voice_entitlement, await service.now(db), revoked=True
+                )
+                await service.check_balance(db, voice_entitlement)
+            if (
+                req.scope in ("voice_microphone", "voice_vendor_processing")
+                and voice_entitlement is not None
+            ):
+                from app.models.db.voice import VoiceSession
+                from app.models.db.voice_lifecycle import VoiceManagedOperation
+
+                # Existing entitlement lock serializes this revocation with connection issuance.
+                # Do not release usage or infer media termination from consent withdrawal.
+                sessions = (
+                    await db.scalars(
+                        select(VoiceSession)
+                        .where(
+                            VoiceSession.user_id == req.user_id,
+                            VoiceSession.source_mode == "synthetic-vaani",
+                            VoiceSession.state.in_(("reserved", "active")),
+                        )
+                        .order_by(VoiceSession.id)
+                        .with_for_update()
+                    )
+                ).all()
+                for session in sessions:
+                    operation = await db.get(
+                        VoiceManagedOperation, session.id, with_for_update=True
+                    )
+                    if operation:
+                        operation.end_requested = True
         if clerk:
-            db.add(AuthEvent(id=uuid.uuid4(), user_id=req.user_id,
-                            action=f"consent_{req.action}", details={
-                                "scope": req.scope, "purpose_version": version,
-                                "issuer": get_settings().auth_issuer}))
+            db.add(
+                AuthEvent(
+                    id=uuid.uuid4(),
+                    user_id=req.user_id,
+                    action=f"consent_{req.action}",
+                    details={
+                        "scope": req.scope,
+                        "purpose_version": version,
+                        "issuer": get_settings().auth_issuer,
+                    },
+                )
+            )
             if req.action == "grant":
-                granted_at = await db.scalar(select(ConsentRecord.granted_at).where(
-                    ConsentRecord.user_id == req.user_id, ConsentRecord.scope == req.scope,
-                    ConsentRecord.revoked_at.is_(None),
-                ))
+                granted_at = await db.scalar(
+                    select(ConsentRecord.granted_at).where(
+                        ConsentRecord.user_id == req.user_id,
+                        ConsentRecord.scope == req.scope,
+                        ConsentRecord.revoked_at.is_(None),
+                    )
+                )
                 if granted_at is not None:
                     now = granted_at
         await db.commit()
@@ -126,9 +195,7 @@ async def delete_profile_memory(
     async with AsyncSessionLocal() as db:
         result = cast(
             CursorResult[Any],
-            await db.execute(
-                delete(UserProfileMemory).where(UserProfileMemory.user_id == user_id)
-            ),
+            await db.execute(delete(UserProfileMemory).where(UserProfileMemory.user_id == user_id)),
         )
         await db.commit()
     return ProfileMemoryDeletionResponse(user_id=str(user_id), deleted=bool(result.rowcount))

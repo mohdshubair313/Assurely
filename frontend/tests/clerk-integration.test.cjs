@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const ts = require('typescript');
 const contracts = require('../../artifacts/integration-client/api-contracts.js');
+const voiceCaseContracts = require('../../artifacts/integration-client/voice/case-contracts.js');
 const owner = '00000000-0000-4000-8000-000000000456';
 const origin = 'http://localhost:3000';
 
@@ -53,11 +54,50 @@ function gateway(token, fetch) {
     'next/server': { NextResponse: { json: (value, init) => Response.json(value, init) } },
     '@/lib/server-session': { accessToken: async () => token, sameOrigin: request => request.headers.get('origin') === origin },
     '@/lib/api-contracts': contracts,
+    '@/lib/voice/case-contracts': voiceCaseContracts,
   }, { BACKEND_URL: 'http://127.0.0.1:8000', NODE_ENV: 'development' }, { fetch });
 }
 const context = path => ({ params: Promise.resolve({ path: path.split('/') }) });
 const write = (path, value, from = origin) => new Request(origin + '/api/backend/' + path, {
   method: 'POST', headers: { Origin: from, 'Content-Type': 'application/json' }, body: JSON.stringify(value),
+});
+test('human-review BFF forwards only owner credentials and a validated operation key', async () => {
+  const path = `sessions/${owner}/human-review`;
+  let calls = 0;
+  const signed = gateway('synthetic-session-token', async (url, init) => {
+    calls++; assert.equal(url.pathname, `/v1/${path}`);
+    assert.equal(init.headers.Authorization, 'Bearer synthetic-session-token');
+    if (init.method === 'POST') assert.deepEqual(JSON.parse(init.body), { request_key: owner });
+    return Response.json({ request: null });
+  });
+  assert.equal((await signed.GET(new Request(origin + '/api/backend/' + path), context(path))).status, 200);
+  assert.equal((await signed.POST(write(path, { request_key: owner }), context(path))).status, 200);
+  for (const body of [{ request_key: 'invalid' }, { request_key: owner, role: 'admin' }, { request_key: owner, user_id: owner }]) {
+    assert.equal((await signed.POST(write(path, body), context(path))).status, 422);
+  }
+  assert.equal((await signed.POST(write(path, { request_key: owner }, 'https://foreign.invalid'), context(path))).status, 403);
+  const duplicate = write(path, {});
+  const duplicateRequest = new Request(duplicate.url, { method: 'POST', headers: duplicate.headers, body: `{"request_key":"${owner}","request_\\u006bey":"${owner}"}` });
+  assert.equal((await signed.POST(duplicateRequest, context(path))).status, 422);
+  assert.equal(calls, 2);
+  const anon = gateway(undefined, async () => { throw new Error('anonymous request forwarded'); });
+  assert.equal((await anon.GET(new Request(origin + '/api/backend/' + path), context(path))).status, 401);
+});
+test('case-binding BFF exposes only owner routes and a duplicate-safe closed command', async () => {
+  const path = `voice/development/sessions/${owner}/case-binding`;
+  let calls = 0;
+  const signed = gateway('synthetic-session-token', async (url, init) => {
+    calls++; assert.equal(init.headers.Authorization, 'Bearer synthetic-session-token');
+    if (init.method === 'POST') assert.deepEqual(JSON.parse(init.body), { case_id: owner, idempotency_key: owner });
+    return Response.json({});
+  });
+  assert.equal((await signed.POST(write(path, { case_id: owner, idempotency_key: owner }), context(path))).status, 200);
+  for (const endpoint of [path, path.replace('case-binding', 'captions')]) assert.equal((await signed.GET(new Request(origin + '/api/backend/' + endpoint), context(endpoint))).status, 200);
+  for (const patch of [{ user_id: owner }, { report_digest: 'a'.repeat(64) }, { approved: true }]) assert.equal((await signed.POST(write(path, { case_id: owner, idempotency_key: owner, ...patch }), context(path))).status, 422);
+  const duplicate = write(path, {});
+  const malformed = new Request(duplicate.url, { method: 'POST', headers: duplicate.headers, body: `{"case_id":"${owner}","case_\\u0069d":"${owner}"}` });
+  assert.equal((await signed.POST(malformed, context(path))).status, 422);
+  assert.equal(calls, 3);
 });
 
 test('BFF obtains owner from independently verified /me and never decodes Clerk user IDs', async () => {
@@ -97,4 +137,20 @@ test('Failed /me identity resolution never mutates consent or substitutes a call
   assert.equal(response.status, 401);
   assert.equal(calls, 1);
   assert.doesNotMatch(await response.text(), /private upstream detail/);
+});
+
+test('voice BFF preserves empty end retries and validates optional operation keys', async () => {
+  const path=`voice/sessions/${owner}/end`;
+  const calls=[];
+  const api=gateway('synthetic-session-token',async (url,init) => {
+    calls.push(JSON.parse(init.body));return Response.json({state:'ended'});
+  });
+  for (const body of [{},{idempotency_key:owner}]) {
+    assert.equal((await api.POST(write(path,body),context(path))).status,200);
+  }
+  assert.deepEqual(calls,[{},{idempotency_key:owner}]);
+  for (const body of [{idempotency_key:'invalid'},{user_id:owner}]) {
+    assert.equal((await api.POST(write(path,body),context(path))).status,422);
+  }
+  assert.equal(calls.length,2);
 });

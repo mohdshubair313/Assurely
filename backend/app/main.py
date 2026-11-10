@@ -73,7 +73,10 @@ class GatewayBoundary:
         self.app = app
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if scope["type"] == "http" and scope["path"] not in {"/health", "/ready"}:
+        # Exactly this provider path uses mandatory raw-body HMAC instead of the browser secret.
+        if scope["type"] == "http" and scope["path"] not in {
+            "/health", "/ready", "/v1/webhooks/vaani", "/v1/webhooks/razorpay-test"
+        }:
             settings = get_settings()
             if settings.environment != "development":
                 expected = settings.backend_gateway_token.get_secret_value().encode()
@@ -107,6 +110,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 logger.exception("Exception retention failed")
 
     cleanup = asyncio.create_task(retention_loop())
+    from app.db.session import AsyncSessionLocal
+    from app.voice.recovery import recovery_loop
+
+    app.state.voice_recovery_ready = False
+    voice_cleanup = asyncio.create_task(recovery_loop(
+        AsyncSessionLocal, settings,
+        lambda ready: setattr(app.state, "voice_recovery_ready", ready),
+    ))
+    app.state.voice_recovery_task = voice_cleanup
     try:
         from app.rag.vector_store import get_vector_store
 
@@ -125,6 +137,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             logger.info("Application started")
             yield
     finally:
+        voice_cleanup.cancel()
+        with suppress(asyncio.CancelledError):
+            await voice_cleanup
         cleanup.cancel()
         with suppress(asyncio.CancelledError):
             await cleanup
@@ -159,6 +174,9 @@ def create_app() -> FastAPI:
     )
     app.add_middleware(GatewayBoundary)
     app.add_middleware(RequestErrorBoundary)
+    from app.ops.tunnel_boundary import TunnelBoundary
+
+    app.add_middleware(TunnelBoundary)
 
     # Mount v1 router
     app.include_router(api_v1_router)
@@ -186,7 +204,10 @@ def create_app() -> FastAPI:
         sink = getattr(app.state, "exception_sink", None)
         runtime_ready = (settings.environment == "development"
                          or message._production_graph is not None)
-        ready = bool(sink is not None and not sink.failed and runtime_ready)
+        voice_task = getattr(app.state, "voice_recovery_task", None)
+        voice_ready = bool(getattr(app.state, "voice_recovery_ready", False)
+                           and voice_task is not None and not voice_task.done())
+        ready = bool(sink is not None and not sink.failed and runtime_ready and voice_ready)
         if ready:
             ready = await dependencies_ready()
         return JSONResponse({"status": "ready" if ready else "unavailable"},

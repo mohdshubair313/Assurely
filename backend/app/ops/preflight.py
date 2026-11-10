@@ -81,7 +81,11 @@ async def database_checks() -> dict[str, bool]:
             revisions: list[str] = list(
                 (await db.execute(text("SELECT version_num FROM alembic_version"))).scalars()
             )
-            result["application_schema"] = revisions == ["010_clerk_identity"]
+            from app.db.schema import compatible_schema
+
+            result["application_schema"] = len(revisions) == 1 and compatible_schema(
+                revisions[0], get_settings()
+            )
             version = await db.scalar(text("SELECT MAX(v) FROM checkpoint_migrations"))
             result["checkpoint_schema"] = version == len(AsyncPostgresSaver.MIGRATIONS) - 1
     except Exception:

@@ -171,6 +171,10 @@ async def release(
         or event.expires_at <= datetime.now(UTC)
     ):
         raise WorkflowError(409, "Current advisor approval is required.")
+    # Local import avoids a cycle: request creation shares this module's head lock.
+    from app.db.human_review import enforce_fresh_decision
+
+    await enforce_fresh_decision(db, issuer, current.session_id, owner, event.created_at)
     await advisor_review.require_assignment(
         db, Reviewer(event.actor_id, issuer), current.session_id
     )

@@ -1,0 +1,60 @@
+# Explicit local voice-ingress test profile; combine with docker-compose.yml.
+# No customer dispatch, public admin surface, real provider calls or paid billing.
+services:
+  api:
+    image: insuranceai-api:voice-dev
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.development
+      secrets: [dependency_constraints]
+    ports: !override
+      - "127.0.0.1:8000:8000"
+    environment:
+      LOG_LEVEL: info
+      TUNNEL_INGRESS_ONLY: "true"
+      VOICE_PROVIDER: disabled
+      VAANI_DISPATCH_ENABLED: "false"
+      VAANI_BYOL_ENABLED: "false"
+      VAANI_DEV_AGENT_REVIEWED: "false"
+      # Receiver-only synthetic signature checks; this cannot dispatch any calls.
+      VAANI_INGRESS_ENABLED: "true"
+    command: [python, -m, uvicorn, app.main:app, --host, 0.0.0.0, --port, "8000", --no-access-log, --ws-max-size, "32768", --limit-concurrency, "100"]
+    volumes:
+      - ./backend/app:/app/app:ro
+      - ./backend/alembic:/app/alembic:ro
+      - ./backend/tools:/app/tools:ro
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/ready', timeout=8)"]
+      interval: 15s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+  voice-recovery:
+    image: insuranceai-api:voice-dev
+    container_name: insurance-voice-recovery
+    env_file: [./backend/.env]
+    environment:
+      ENVIRONMENT: development
+      LOG_LEVEL: info
+      DATABASE_URL: postgresql+asyncpg://insurance:insurance_dev@postgres:5432/insurance_db
+      REDIS_URL: redis://redis:6379/0
+      VOICE_PROVIDER: disabled
+      VAANI_DISPATCH_ENABLED: "false"
+      VAANI_BYOL_ENABLED: "false"
+      VAANI_DEV_AGENT_REVIEWED: "false"
+      VAANI_INGRESS_ENABLED: "false"
+    command: [python, -m, app.ops.voice_worker]
+    volumes:
+      - ./backend/app:/app/app:ro
+    healthcheck:
+      test: [CMD, python, -m, app.ops.voice_worker, --healthcheck]
+      interval: 15s
+      timeout: 8s
+      retries: 3
+      start_period: 20s
+    restart: unless-stopped
+    networks: [insurance-net]
+    tmpfs: [/tmp:mode=1777]
+secrets:
+  dependency_constraints:
+    file: ./backend/constraints-production.txt

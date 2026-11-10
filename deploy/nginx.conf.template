@@ -3,6 +3,11 @@ limit_req_zone $binary_remote_addr zone=account:10m rate=6r/m;
 limit_req_zone $binary_remote_addr zone=messages:10m rate=12r/m;
 limit_req_zone $binary_remote_addr zone=api:10m rate=60r/m;
 limit_req_status 429;
+limit_req_zone $binary_remote_addr zone=voice_events:10m rate=30r/s;
+map $http_upgrade $voice_connection_upgrade {
+    default upgrade;
+    '' close;
+}
 server_tokens off;
 access_log off;
 error_log /dev/stderr crit;
@@ -41,6 +46,33 @@ server {
     proxy_send_timeout 15s;
     proxy_hide_header X-Powered-By;
     proxy_hide_header Server;
+
+    # Exact provider ingress only. FastAPI independently requires a valid raw-body HMAC.
+    location = /v1/webhooks/vaani {
+        limit_req zone=voice_events burst=30 nodelay;
+        client_max_body_size 256k;
+        proxy_set_header X-Assurely-Gateway-Key "";
+        proxy_set_header Host ${PUBLIC_HOST};
+        proxy_set_header X-Forwarded-Host ${PUBLIC_HOST};
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header Connection "";
+        proxy_pass http://api:8000;
+    }
+    # BYOL validates its own Bearer credential and a live synthetic session binding.
+    location ^~ /v1/voice/provider/byol/ {
+        limit_req zone=api burst=5 nodelay;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $voice_connection_upgrade;
+        proxy_set_header Authorization $http_authorization;
+        proxy_set_header X-Assurely-Gateway-Key "";
+        proxy_set_header Host ${PUBLIC_HOST};
+        proxy_set_header X-Forwarded-Host ${PUBLIC_HOST};
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_read_timeout 30s;
+        proxy_pass http://api:8000;
+    }
 
     location = /api/auth/sign-in {
         limit_req zone=account burst=3 nodelay;

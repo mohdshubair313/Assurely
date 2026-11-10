@@ -29,7 +29,8 @@ def main() -> None:
     if not asyncio.run(checked_configuration()):
         raise SystemExit(1)
     uvicorn.run("app.main:app", host="0.0.0.0", port=8000, access_log=False,
-                proxy_headers=False)
+                proxy_headers=False, ws_max_size=32768,
+                ws_ping_interval=20, ws_ping_timeout=20)
 
 
 if __name__ == "__main__":

@@ -1,7 +1,9 @@
 /** Same-origin transport. No bearer credentials or health details in browser storage. */
 import { ContractError, object, identifier, digest, report, messageRequest, messageResponse,
   reportStatusResponse, reviewResponse, consentRequest, decisionRequest, text, type Decoder,
-  consentVersion, scopes, type ConsentScope, type Scenario } from "./api-contracts";
+  consentVersion, purposeVersion, scopes, type ConsentScope, type Scenario } from "./api-contracts";
+import { humanReviewCommand, humanReviewResponse, type HumanReviewRequest } from "./api-contracts";
+export type { HumanReviewRequest } from "./api-contracts";
 export type { Citation, Report, SourceReference, MessageResponse, ReportStatus, Review, ConsentScope, Scenario } from "./api-contracts";
 export class ApiError extends Error {
   constructor(message: string, public status = 0, public retryAfter: number | null = null) { super(message); }
@@ -45,6 +47,25 @@ export async function postMessage(session: string, message: string, scenario?: S
   if (result.session_id !== body.session_id) throw new ContractError(); return result;
 }
 export function reportStatus(session: string, options?: RequestOptions) { return api(`sessions/${identifier(session)}/report-status`, reportStatusResponse, undefined, options); }
+function boundHumanReview(session: string) {
+  return (value: unknown): HumanReviewRequest | null => {
+    const result = humanReviewResponse(value);
+    if (result && result.session_id !== session) throw new ContractError();
+    return result;
+  };
+}
+export function getHumanReview(session: string, options?: RequestOptions) {
+  const expected = identifier(session);
+  return api(`sessions/${expected}/human-review`, boundHumanReview(expected), undefined, options);
+}
+export function requestHumanReview(session: string, key: string, options?: RequestOptions) {
+  const expected = identifier(session), body = humanReviewCommand({ request_key: key });
+  return api(`sessions/${expected}/human-review`, value => {
+    const result = boundHumanReview(expected)(value);
+    if (!result) throw new ContractError();
+    return result;
+  }, body, options);
+}
 export function readSession(session: string, options?: RequestOptions) {
   const expected = identifier(session);
   return api(`session/${expected}`, value => {
@@ -88,7 +109,7 @@ export function recoverTurn(session: string, turn: string, key: string, options?
   }, { turn_id: turnId, request_key: identifier(key) }, options);
 }
 export function updateConsent(scope: ConsentScope, action: "grant" | "revoke", options?: RequestOptions) {
-  const body = consentRequest({ scope, action, purpose_version: consentVersion });
+  const body = consentRequest({ scope, action, purpose_version: purposeVersion(scope) });
   return api("consent", value => { const data = object(value);
     if (data.scope !== scope || data.status !== (action === "grant" ? "granted" : "revoked")) throw new ContractError();
     identifier(data.user_id); return { status: text(data.status), timestamp: text(data.timestamp, 40) };
@@ -103,13 +124,84 @@ export function deleteProfileMemory(options?: RequestOptions) {
 export function getConsents(options?: RequestOptions) {
   return api("me/consents", value => {
     const data = object(value);
-    if (data.purpose_version !== consentVersion || !Array.isArray(data.purposes) || data.purposes.length !== scopes.length) throw new ContractError();
+    const required = scopes.filter(scope => scope !== "voice_report_speech");
+    if (data.purpose_version !== consentVersion || !Array.isArray(data.purposes) || data.purposes.length < required.length || data.purposes.length > scopes.length) throw new ContractError();
     const purposes = data.purposes.map(value => {
       const row = object(value);
       if (!scopes.includes(row.scope as ConsentScope) || typeof row.granted !== "boolean") throw new ContractError();
       return { scope: row.scope as ConsentScope, granted: row.granted, description: text(row.description, 500) };
     });
-    if (new Set(purposes.map(row => row.scope)).size !== scopes.length) throw new ContractError();
+    if (new Set(purposes.map(row => row.scope)).size !== purposes.length || required.some(scope => !purposes.some(row => row.scope === scope))) throw new ContractError();
     return purposes;
   }, undefined, options);
+}
+
+export interface VoiceEntitlement {
+  enabled: boolean; provider: string; plan_code: string | null; minutes_remaining: number;
+  active_sessions: number; concurrency_limit: number; max_call_seconds: number;
+  live_provider_ready: boolean; prototype_label?: string;
+}
+export interface VoiceSessionResponse {
+  session_id: string; state: string; provider: string; language: string;
+  reserved_seconds: number; consumed_seconds: number; audio_connected: false;
+  elapsed_seconds: number; transcript_persisted: false; ai_disclosure: string;
+}
+export function getVoiceEntitlement(options?: RequestOptions) {
+  return api("voice/entitlement", value => {
+    const data = object(value);
+    if (typeof data.enabled !== "boolean" || typeof data.live_provider_ready !== "boolean" ||
+        [data.minutes_remaining, data.active_sessions, data.concurrency_limit, data.max_call_seconds]
+          .some(value => !Number.isSafeInteger(value) || (value as number) < 0) ||
+        data.live_provider_ready !== false || (data.enabled && data.provider !== "mock")) throw new ContractError();
+    if (data.plan_code !== null && typeof data.plan_code !== "string") throw new ContractError();
+    return { enabled: data.enabled, provider: text(data.provider, 30), plan_code: data.plan_code as string | null,
+      minutes_remaining: data.minutes_remaining as number, active_sessions: data.active_sessions as number,
+      concurrency_limit: data.concurrency_limit as number, max_call_seconds: data.max_call_seconds as number,
+      live_provider_ready: data.live_provider_ready,
+      ...(typeof data.prototype_label === "string" ? { prototype_label: text(data.prototype_label, 200) } : {}) };
+  }, undefined, options);
+}
+function voiceSession(value: unknown): VoiceSessionResponse {
+  const data = object(value);
+  if (data.audio_connected !== false || data.transcript_persisted !== false ||
+        data.provider !== "mock" || !["reserved", "active", "ended", "expired", "failed"].includes(String(data.state)) ||
+        [data.reserved_seconds, data.consumed_seconds, data.elapsed_seconds]
+          .some(value => !Number.isSafeInteger(value) || (value as number) < 0) ||
+        (data.consumed_seconds as number) > (data.reserved_seconds as number)) throw new ContractError();
+  return { session_id: identifier(data.session_id), state: text(data.state, 30), provider: text(data.provider, 30),
+    language: text(data.language, 20), reserved_seconds: data.reserved_seconds as number,
+    consumed_seconds: data.consumed_seconds as number, elapsed_seconds: data.elapsed_seconds as number,
+    audio_connected: false, transcript_persisted: false,
+    ai_disclosure: text(data.ai_disclosure, 300) };
+}
+export function getActiveVoiceSession(options?: RequestOptions) {
+  return api("voice/active", value => {
+    const data = object(value);
+    return data.session === null ? null : voiceSession(data.session);
+  }, undefined, options);
+}
+export function getVoiceSession(sessionId: string, options?: RequestOptions) {
+  const id = identifier(sessionId);
+  return api(`voice/sessions/${id}`, value => {
+    const result = voiceSession(value); if (result.session_id !== id) throw new ContractError(); return result;
+  }, undefined, options);
+}
+export function startVoiceSession(language: "en" | "hi" | "hinglish", idempotencyKey: string, options?: RequestOptions) {
+  return api("voice/sessions", voiceSession, { language, idempotency_key: identifier(idempotencyKey) }, options);
+}
+export function endVoiceSession(sessionId: string, options?: RequestOptions) {
+  const id = identifier(sessionId);
+  return api(`voice/sessions/${id}/end`, value => {
+    const result = voiceSession(value); if (result.session_id !== id) throw new ContractError(); return result;
+  }, {}, options);
+}
+export function sendVoiceDemoPrompt(sessionId: string, prompt: "copay" | "estimate" | "agent_claim" | "human_review", options?: RequestOptions) {
+  const id = identifier(sessionId);
+  return api(`voice/sessions/${id}/turn`, value => {
+    const data = object(value), evidence = data.evidence;
+    if (identifier(data.session_id) !== id || data.audio_connected !== false || data.transcript_persisted !== false || !Array.isArray(evidence) || evidence.length !== 1) throw new ContractError();
+    const source = object(evidence[0]);
+    if (source.synthetic !== true || source.verified !== false) throw new ContractError();
+    return { answer: text(data.answer, 1000), source: text(source.source_title, 100) };
+  }, { prompt }, options);
 }

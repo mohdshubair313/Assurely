@@ -175,23 +175,28 @@ async def test_release_migration_refuses_to_destroy_current_turns(database):
     migration = runpy.run_path(str(
         Path(__file__).parents[2] / "alembic/versions/008_report_release.py"
     ))
-    recovery = runpy.run_path(str(
-        Path(__file__).parents[2] / "alembic/versions/009_turn_recovery.py"
-    ))
+    descendants = [
+        runpy.run_path(str(path))
+        for path in sorted((Path(__file__).parents[2] / "alembic/versions").glob("[0-9]*.py"))
+        if path.name[:3] > "008"
+    ]
 
     def run(conn, action):
         with Operations.context(MigrationContext.configure(conn)):
             migration[action]()
 
-    def run_recovery(conn, action):
+    def run_descendants(conn, action):
         with Operations.context(MigrationContext.configure(conn)):
-            recovery[action]()
+            ordered = reversed(descendants) if action == "downgrade" else descendants
+            for descendant in ordered:
+                descendant[action]()
 
     async with engine.begin() as conn:
-        await conn.run_sync(run_recovery, "downgrade")
+        # Reverse all empty descendants before their release-receipt FK target.
+        await conn.run_sync(run_descendants, "downgrade")
         await conn.run_sync(run, "downgrade")
         await conn.run_sync(run, "upgrade")
-        await conn.run_sync(run_recovery, "upgrade")
+        await conn.run_sync(run_descendants, "upgrade")
     async with factory() as db, db.begin():
         await store.begin_turn(db, ACTOR.issuer, "synthetic", uuid.uuid4())
     with pytest.raises(DBAPIError, match="Refusing downgrade"):

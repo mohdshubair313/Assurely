@@ -7,6 +7,7 @@ import asyncio
 from sqlalchemy import text
 
 from app.cache.redis_client import get_redis_client
+from app.db.schema import compatible_schema
 from app.db.session import AsyncSessionLocal
 
 
@@ -14,7 +15,9 @@ async def dependencies_ready() -> bool:
     async def database_ready() -> bool:
         async with AsyncSessionLocal() as db:
             version = await db.scalar(text("SELECT version_num FROM alembic_version"))
-            return bool(version == "010_clerk_identity")
+            from app.core.config import get_settings
+
+            return compatible_schema(version, get_settings())
 
     async def redis_ready() -> bool:
         redis = await get_redis_client()

@@ -19,11 +19,25 @@ from app.core.config import Settings
 def main() -> int:
     Settings.model_config["env_file"] = None
     for name in (
-        "GROQ_API_KEY", "GEMINI_API_KEY", "OPENROUTER_API_KEY",
-        "LANGFUSE_PUBLIC_KEY", "LANGFUSE_SECRET_KEY",
-        "ADVISOR_WEBHOOK_URL", "ADVISOR_WEBHOOK_TOKEN",
-        "AUTH_ISSUER", "AUTH_AUDIENCE", "AUTH_JWKS_URL",
-        "CLERK_PUBLISHABLE_KEY", "CLERK_SECRET_KEY",
+        "GROQ_API_KEY",
+        "GEMINI_API_KEY",
+        "OPENROUTER_API_KEY",
+        "LANGFUSE_PUBLIC_KEY",
+        "LANGFUSE_SECRET_KEY",
+        "ADVISOR_WEBHOOK_URL",
+        "ADVISOR_WEBHOOK_TOKEN",
+        "AUTH_ISSUER",
+        "AUTH_AUDIENCE",
+        "AUTH_JWKS_URL",
+        "CLERK_PUBLISHABLE_KEY",
+        "CLERK_SECRET_KEY",
+        "VAANI_API_KEY",
+        "VAANI_WEBHOOK_SECRET",
+        "VAANI_BYOL_TOKEN",
+        "VOICE_TOKEN_ENCRYPTION_KEY",
+        "RAZORPAY_TEST_KEY_ID",
+        "RAZORPAY_TEST_KEY_SECRET",
+        "RAZORPAY_TEST_WEBHOOK_SECRET",
         "BACKEND_GATEWAY_TOKEN",
     ):
         os.environ[name] = ""

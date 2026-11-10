@@ -21,6 +21,7 @@ from app.models.db.auth_identity import AuthEvent, AuthIdentity  # noqa: F401, E
 from app.models.db.consent_record import ConsentRecord  # noqa: F401, E402
 from app.models.db.decision_trace import DecisionTrace  # noqa: F401, E402
 from app.models.db.escalation import Escalation  # noqa: F401, E402
+from app.models.db.human_review import HumanReviewRequest  # noqa: F401, E402
 from app.models.db.policy_document import PolicyDocument  # noqa: F401, E402
 from app.models.db.policy_publication import (  # noqa: F401, E402
     PolicyPublication,
@@ -42,3 +43,15 @@ from app.models.db.report_release import (  # noqa: F401, E402
 from app.models.db.session import Session  # noqa: F401, E402
 from app.models.db.user import User  # noqa: F401, E402
 from app.models.db.user_profile_memory import UserProfileMemory  # noqa: F401, E402
+from app.models.db.voice import VoiceEntitlement, VoiceSession, VoiceUsageLedger  # noqa: F401, E402
+from app.models.db.voice_byol_turn import VoiceByolTurn  # noqa: F401, E402
+from app.models.db.voice_case_binding import VoiceCaseBinding  # noqa: F401, E402
+from app.models.db.voice_lifecycle import (  # noqa: F401, E402
+    VoiceBillingReceipt,
+    VoiceFundingAllocation,
+    VoiceFundingPeriod,
+    VoiceManagedOperation,
+    VoiceRecap,
+    VoiceSubscription,
+)
+from app.models.db.voice_provider import VoiceProviderCall, VoiceProviderEvent  # noqa: F401, E402

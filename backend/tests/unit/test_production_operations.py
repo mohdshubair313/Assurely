@@ -36,7 +36,7 @@ def test_conflicting_tls_modes_fail():
 async def test_readiness_checks_both_dependencies(db_ok, redis_ok):
     db = AsyncMock()
     db.__aenter__.return_value = db
-    db.scalar.return_value = "010_clerk_identity" if db_ok else "009_turn_recovery"
+    db.scalar.return_value = "013_vaani_backend" if db_ok else "012_voice_lifecycle"
     redis = AsyncMock()
     redis.ping.return_value = redis_ok
     with patch("app.ops.readiness.AsyncSessionLocal", return_value=db), patch(
@@ -64,6 +64,8 @@ def test_production_readiness_requires_diagnostics_runtime_and_dependencies(
     ), patch("app.ops.readiness.dependencies_ready", AsyncMock(return_value=dependencies)):
         app = create_app()
         app.state.exception_sink = SimpleNamespace(failed=not diagnostics)
+        app.state.voice_recovery_ready = True
+        app.state.voice_recovery_task = SimpleNamespace(done=lambda: False)
         response = TestClient(app).get("/ready")
         assert response.status_code == code
         assert response.json() == {"status": "ready" if code == 200 else "unavailable"}
@@ -147,3 +149,16 @@ def test_deployment_requires_verified_transport_and_gateway_configuration():
     settings.redis_url = "redis://redis.invalid:6379/0"
     checks = configuration_checks(settings)
     assert not checks["database_verified_tls"] and not checks["redis_authenticated_tls"]
+
+
+@pytest.mark.parametrize('ready,done', [(False,False),(True,True)])
+def test_unhealthy_or_stopped_voice_recovery_blocks_readiness(ready,done):
+    with patch('app.main.get_settings',return_value=SimpleNamespace(
+        environment='production',cors_origins=[])),patch(
+            'app.api.v1.message._production_graph',object()),patch(
+            'app.ops.readiness.dependencies_ready',AsyncMock(return_value=True)):
+        application=create_app()
+        application.state.exception_sink=SimpleNamespace(failed=False)
+        application.state.voice_recovery_ready=ready
+        application.state.voice_recovery_task=SimpleNamespace(done=lambda:done)
+        assert TestClient(application).get('/ready').status_code==503

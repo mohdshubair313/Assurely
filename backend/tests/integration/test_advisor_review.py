@@ -256,30 +256,31 @@ async def test_advisor_migration_reverses_only_before_snapshots(database, public
     migration = runpy.run_path(str(
         Path(__file__).parents[2] / "alembic/versions/007_advisor_review.py"
     ))
-    release_migration = runpy.run_path(str(
-        Path(__file__).parents[2] / "alembic/versions/008_report_release.py"
-    ))
-    recovery_migration = runpy.run_path(str(
-        Path(__file__).parents[2] / "alembic/versions/009_turn_recovery.py"
-    ))
+    # Later migrations also reuse the advisor immutability function. Reverse
+    # every empty descendant in order, exactly as Alembic does, before 007.
+    descendants = [
+        runpy.run_path(str(path))
+        for path in sorted((Path(__file__).parents[2] / "alembic/versions").glob("[0-9]*.py"))
+        if path.name[:3] > "007"
+    ]
 
     def run(conn, action):
         with Operations.context(MigrationContext.configure(conn)):
             migration[action]()
 
     async with engine.begin() as conn:
-        def undo_release(connection):
+        def undo_descendants(connection):
             with Operations.context(MigrationContext.configure(connection)):
-                recovery_migration["downgrade"]()
-                release_migration["downgrade"]()
-        await conn.run_sync(undo_release)
+                for descendant in reversed(descendants):
+                    descendant["downgrade"]()
+        await conn.run_sync(undo_descendants)
         await conn.run_sync(run, "downgrade")
         await conn.run_sync(run, "upgrade")
-        def redo_release(connection):
+        def redo_descendants(connection):
             with Operations.context(MigrationContext.configure(connection)):
-                release_migration["upgrade"]()
-                recovery_migration["upgrade"]()
-        await conn.run_sync(redo_release)
+                for descendant in descendants:
+                    descendant["upgrade"]()
+        await conn.run_sync(redo_descendants)
     state, _, _ = await prepare(factory, publication_input)
     await stage(factory, state)
     with pytest.raises(DBAPIError, match="Refusing downgrade"):
