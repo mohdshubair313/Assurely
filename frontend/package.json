@@ -9,7 +9,7 @@
     "lint": "eslint",
     "test:contracts": "tsc lib/api-contracts.ts lib/api-client.ts lib/intake.ts lib/human-review-attempt.ts lib/voice/case-contracts.ts --outDir ../artifacts/integration-client --module commonjs --target ES2022 --skipLibCheck --esModuleInterop && node --test tests/api-contracts.test.cjs tests/clerk-integration.test.cjs",
     "test:voice-media": "tsc lib/voice/controller.ts --outDir ../artifacts/voice-media --module commonjs --target ES2022 --skipLibCheck --strict && node --test tests/voice-media.test.cjs",
-    "test:voice-development": "tsc lib/voice/api.ts lib/voice/case-api.ts lib/voice/caption-display.ts lib/voice/caption-lifecycle.ts lib/voice/binding-attempt.ts --outDir ../artifacts/voice-next --module commonjs --target ES2022 --skipLibCheck --strict && node --test tests/voice-development.test.cjs tests/voice-case.test.cjs"
+    "test:voice-development": "tsc lib/voice/api.ts lib/voice/case-api.ts lib/voice/caption-display.ts lib/voice/caption-lifecycle.ts lib/voice/binding-attempt.ts lib/voice/activity.ts lib/voice/activity-display.ts lib/voice/workspace-lifetime.ts --outDir ../artifacts/voice-next --module commonjs --target ES2022 --skipLibCheck --strict && node --test tests/voice-development.test.cjs tests/voice-case.test.cjs tests/voice-activity.test.cjs tests/voice-workspace.test.cjs"
   },
   "dependencies": {
     "@clerk/nextjs": "7.9.24",

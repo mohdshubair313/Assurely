@@ -498,13 +498,16 @@ def test_checkout_timeout_is_not_retried_and_live_keys_are_rejected(setup):
 
 
 def test_recap_encryption_consent_fresh_evidence_and_retention(setup, monkeypatch):
+    from app.core.consent import CONSENT_VERSION
     from app.models.db.session import Session
     from app.models.db.voice_lifecycle import VoiceRecap
-    from app.voice import recaps
     from app.voice.recaps import RecapService, prune_recaps
 
     engine, factory, settings, owner, _, _ = setup
     settings.voice_tools_enabled = True
+    settings.voice_case_binding_enabled = True
+    settings.auth_provider = "clerk"
+    settings.environment = "staging"
     case_id = uuid.uuid4()
     with engine.begin() as db:
         db.execute(insert(Session).values(id=case_id, user_id=owner, intent="health"))
@@ -513,17 +516,27 @@ def test_recap_encryption_consent_fresh_evidence_and_retention(setup, monkeypatc
                 user_id=owner, scope="voice_summary", purpose_version=VOICE_CONSENT_VERSION
             )
         )
+        db.execute(
+            insert(ConsentRecord).values(
+                user_id=owner, scope="process_comparison", purpose_version=CONSENT_VERSION
+            )
+        )
     packet = {
         "case_id": str(case_id),
         "report_digest": "a" * 64,
         "speech": "Synthetic report excerpt",
     }
 
-    async def current(*args):
-        return packet.copy()
-
-    monkeypatch.setattr(recaps, "current_packet", current)
     svc = RecapService(factory, settings)
+
+    async def current(db, actual_owner, actual_case, request_key):
+        assert db.in_transaction()
+        assert actual_owner == owner and actual_case == case_id
+        return packet.copy(), datetime.now(UTC) + timedelta(hours=1)
+
+    # Only the packet projection is synthetic in this historical storage test;
+    # test_voice_activity exercises the actual independent release authority.
+    monkeypatch.setattr(svc, "_packet", current)
 
     async def run():
         receipt = await svc.create_recap(owner, case_id, uuid.uuid4())

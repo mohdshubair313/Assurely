@@ -1,5 +1,15 @@
 # Functional spec: Assurely AI Voice Insurance Guide
 
+**2026-11-14 implementation contract:** add an owner-only session activity recap
+derived from existing response receipts, with separate current summary consent.
+It can show sent/uncertain/interrupted/pending outcomes and freshly authorized
+report sentences; it cannot infer what was heard or reconstruct unstored questions.
+Ended-session access does not require renewed microphone permission. Account changes
+must clear the entire voice workspace and cancel later effects of pending microphone
+or API work. Saved excerpts must share one transaction with consent and independent
+report-release authorization. This narrows the implemented FR23/AC19 slice; true
+natural conversation summaries remain a separate unimplemented capability.
+
 **2026-11-09 guarded speech checkpoint:** a separately default-off report-reading
 bridge now buffers complete original report sentences with dated sources and checks
 current independent human release again before sending. Only explicit report-read

@@ -1,5 +1,5 @@
 /** Authenticated same-origin control only; provider master/session secrets never arrive here. */
-import { api } from "../api-client";
+import { api, type RequestOptions } from "../api-client";
 import { ContractError, identifier, object } from "../api-contracts";
 import { validateConnection, type VoiceConnection } from "./controller";
 
@@ -20,17 +20,17 @@ export function sessionStatus(value: unknown): DevelopmentSession {
 function scoped(expected: string) {
   return (value: unknown) => { const result = sessionStatus(value); if (result.sessionId !== expected) throw new ContractError(); return result; };
 }
-export function availability() { return api("voice/development/availability", value => {
+export function availability(options?: RequestOptions) { return api("voice/development/availability", value => {
   const data = object(value); if (typeof data.enabled !== "boolean" || data.synthetic !== true || data.billing_enabled !== false) throw new ContractError(); return data.enabled;
-}); }
-export function startDevelopment(key: string) { return api("voice/development/sessions", sessionStatus, { idempotency_key: identifier(key) }); }
-export function readDevelopment(session: string) { return api(`voice/development/sessions/${identifier(session)}`, scoped(session)); }
-export function authorizeDevelopment(session: string) { return api(`voice/development/sessions/${identifier(session)}/authorization`, scoped(session)); }
-export function endDevelopment(session: string) { return api(`voice/development/sessions/${identifier(session)}/end`, scoped(session), {}); }
-export function connectDevelopment(session: string) { return api(`voice/development/sessions/${identifier(session)}/connect`, value => {
+}, undefined, options); }
+export function startDevelopment(key: string, options?: RequestOptions) { return api("voice/development/sessions", sessionStatus, { idempotency_key: identifier(key) }, options); }
+export function readDevelopment(session: string, options?: RequestOptions) { return api(`voice/development/sessions/${identifier(session)}`, scoped(session), undefined, options); }
+export function authorizeDevelopment(session: string, options?: RequestOptions) { return api(`voice/development/sessions/${identifier(session)}/authorization`, scoped(session), undefined, options); }
+export function endDevelopment(session: string, options?: RequestOptions) { return api(`voice/development/sessions/${identifier(session)}/end`, scoped(session), {}, options); }
+export function connectDevelopment(session: string, options?: RequestOptions) { return api(`voice/development/sessions/${identifier(session)}/connect`, value => {
   const status = scoped(session)(value), data = object(value);
   if (!status.allowed || status.endRequested || typeof data.url !== "string" || typeof data.token !== "string") throw new ContractError();
   const result: VoiceConnection = { sessionId: status.sessionId, roomName: status.roomName, expiresAt: status.expiresAt,
     url: data.url, token: data.token, synthetic: true };
   validateConnection(result, Date.now()); return result;
-}, {}); }
+}, {}, options); }

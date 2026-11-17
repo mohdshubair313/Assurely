@@ -1,5 +1,15 @@
 # Assurely voice implementation report
 
+**Latest checkpoint, 2026-11-14:** implemented owner-scoped activity recaps from
+durable response receipts, same-transaction saved-excerpt authorization, immediate
+optional-content erasure on summary withdrawal, full account/media isolation and
+truthful configuration/runtime inventory. Current verification: 215 affected backend
+tests and 76 frontend checks passed, plus build/static checks. Twenty-five new
+PostgreSQL cases are authored/collected but execution is blocked by Docker Engine
+HTTP 500; full local unit collection is also blocked by a Chroma/offline-environment
+dependency issue. This does not complete natural conversation, actual audio or
+commercial/privacy release. See [architecture, files, evidence and remaining gates](docs/VAANI_VOICE_ARCHITECTURE_STATUS.md).
+
 **Latest bridge checkpoint, 2026-11-09:** implemented complete-answer BYOL buffering,
 fresh report/human-release checks before send, durable unknown-send/no-replay
 receipts and cancellation of unsent obsolete responses. Report export additionally

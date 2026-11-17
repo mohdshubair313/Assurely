@@ -56,8 +56,16 @@ export function captionPacket(value: unknown, binding: VoiceCaseBinding, now = D
       data.realtime_transcript !== false || data.external_speech_enabled !== false) throw new ContractError();
   const expires_at = stamp(data.expires_at), deadline = Date.parse(expires_at);
   if (deadline <= now || deadline > now + 15_000 || !Array.isArray(data.sentences) || data.sentences.length > 32) throw new ContractError();
-  const decoded = report({ sentences: data.sentences });
-  const sentences = data.sentences.map((value, index) => {
+  const sentences = reviewedSentences(data.sentences, expires_at, now);
+  return { ...selected, sentences, expires_at, safe_for_display: true, caption_scope: "authorized_report_excerpt", realtime_transcript: false, external_speech_enabled: false };
+}
+
+/** Shared projection validation; never substitutes for current server release authority. */
+export function reviewedSentences(value: unknown, expiresAt: string, now = Date.now()) {
+  const deadline = Date.parse(stamp(expiresAt));
+  if (deadline <= now || !Array.isArray(value) || !value.length || value.length > 32) throw new ContractError();
+  const decoded = report({ sentences: value });
+  return value.map((value, index) => {
     const row = closed(value, ["id", "index", "text", "citations"]);
     if (row.id !== `sentence-${index + 1}` || row.index !== index || text(row.text, 4096) !== decoded.sentences[index].text) throw new ContractError();
     if (!Array.isArray(row.citations)) throw new ContractError();
@@ -76,5 +84,4 @@ export function captionPacket(value: unknown, binding: VoiceCaseBinding, now = D
     });
     return { id: String(row.id), index, text: decoded.sentences[index].text, citations };
   });
-  return { ...selected, sentences, expires_at, safe_for_display: true, caption_scope: "authorized_report_excerpt", realtime_transcript: false, external_speech_enabled: false };
 }

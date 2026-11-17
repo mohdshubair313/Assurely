@@ -23,7 +23,7 @@ const routes: [string, RegExp][] = [
   ["DELETE", new RegExp(`^voice/development/recaps/${uuid}$`)],
   ["GET", new RegExp(`^voice/development/sessions/${uuid}(?:/authorization)?$`)],
   ["POST", new RegExp(`^voice/development/sessions/${uuid}/(?:connect|end)$`)],
-  ["GET", new RegExp(`^voice/development/sessions/${uuid}/(?:case-binding|captions)$`)],
+  ["GET", new RegExp(`^voice/development/sessions/${uuid}/(?:case-binding|captions|activity-recap)$`)],
   ["POST", new RegExp(`^voice/development/sessions/${uuid}/case-binding$`)],
   ["POST", /^voice\/sessions$/],
   ["GET", new RegExp(`^voice/sessions/${uuid}$`)],

@@ -8,7 +8,7 @@ from typing import Annotated, Any, Literal, cast
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import delete, select, update
+from sqlalchemy import delete, select, text, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.engine import CursorResult
 
@@ -116,6 +116,21 @@ async def update_consent(
             if req.scope == "save_profile":
                 await db.execute(
                     delete(UserProfileMemory).where(UserProfileMemory.user_id == req.user_id)
+                )
+            if req.scope == "voice_summary" and await db.scalar(
+                text("SELECT to_regclass('voice_recaps') IS NOT NULL")
+            ):
+                from app.models.db.voice_lifecycle import VoiceRecap
+
+                # Same entitlement -> consent -> recap order as reads/creation.
+                # A later grant must not revive optional content awaiting worker purge.
+                await db.execute(
+                    update(VoiceRecap)
+                    .where(
+                        VoiceRecap.user_id == req.user_id,
+                        VoiceRecap.encrypted_content.is_not(None),
+                    )
+                    .values(encrypted_content=None)
                 )
             if req.scope == "voice_demo" and voice_entitlement is not None:
                 service = VoiceSessionService(AsyncSessionLocal, get_settings())

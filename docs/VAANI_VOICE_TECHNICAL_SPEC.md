@@ -1,5 +1,17 @@
 # Technical spec: Assurely AI Voice Insurance Guide
 
+**2026-11-14 implementation contract:** reuse migration 017 response receipts for
+GET-only activity recaps, bounded to 128 events. No new table or graph routing is
+required. Identity, processing/summary consent, receipt reads and optional exact
+report projection share an entitlement-first transaction. Only a matching sent
+report receipt permits a fresh report-release attempt; unknown sends cannot be
+claimed heard. Display authority expires within ten seconds and current source/
+review expiry. Existing saved excerpt creation/read/delete must serialize with
+revocation and current human release. The frontend keys the complete media workspace
+and recovery storage by account, aborts stale work, and hides recap text on expiry,
+blur or account change. Release inventory distinguishes configured software from
+unobserved runtime and pending external acceptance; it never manufactures approval.
+
 **2026-11-09 guarded BYOL checkpoint:** additive candidate migration
 `017_voice_byol_turns` records immutable normalized response intent and one-shot
 send fences without storing report/transcript text. Complete buffering, repeated

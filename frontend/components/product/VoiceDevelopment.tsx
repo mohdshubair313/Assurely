@@ -1,22 +1,30 @@
 "use client";
 
-import { useEffect, useId, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useAuth } from "@clerk/nextjs";
 import VoiceCaseCompanion from "./VoiceCaseCompanion";
 import ReportSpeechConsent from "./ReportSpeechConsent";
+import VoiceActivityRecap from "./VoiceActivityRecap";
 import { Button, ButtonLabel } from "@/components/createui/button";
 import { VoiceAudioControls } from "./VoiceAudioControls";
 import { updateConsent } from "@/lib/api-client";
 import { VoiceMediaController, type VoiceConnection } from "@/lib/voice/controller";
 import { createLiveKitRoom } from "@/lib/voice/livekit-room";
 import { availability, authorizeDevelopment, connectDevelopment, endDevelopment, readDevelopment, startDevelopment, type DevelopmentSession } from "@/lib/voice/api";
-
-const storageKey = "assurely-synthetic-voice-session";
-const attemptKey = "assurely-synthetic-voice-attempt";
+import { currentStep, probeMicrophone, workspaceStorageKeys, WorkspaceLifetime } from "@/lib/voice/workspace-lifetime";
 
 export default function VoiceDevelopment() {
-  const { userId } = useAuth();
+  const { userId, isLoaded } = useAuth();
+  if (!isLoaded || !userId) return <p role="status" className="reference-container py-10 text-body">Sign in to open your voice workspace.</p>;
+  return <VoiceWorkspace key={userId} account={userId} />;
+}
+
+function VoiceWorkspace({ account: userId }: { account: string }) {
+  const keys = workspaceStorageKeys(userId);
+  const storageKey = keys.session, attemptKey = keys.attempt;
+  const [lifetime] = useState(() => new WorkspaceLifetime());
+  const operation = useRef(false);
   const audioId = useId();
   const [enabled, setEnabled] = useState(false);
   const [accepted, setAccepted] = useState(false);
@@ -29,64 +37,70 @@ export default function VoiceDevelopment() {
   const [notice, setNotice] = useState("Checking synthetic audio availability.");
   const controller = useMemo(() => new VoiceMediaController({
     createRoom: () => { const element = document.getElementById(audioId); if (!element) throw new Error("Audio surface unavailable"); return createLiveKitRoom(element); },
-    authorize: async id => { const status = await authorizeDevelopment(id); return { sessionId: status.sessionId, roomName: status.roomName, allowed: status.allowed, expiresAt: status.expiresAt }; },
-  }), [audioId]);
+    authorize: async id => { const status = await authorizeDevelopment(id, { signal: lifetime.signal }); return { sessionId: status.sessionId, roomName: status.roomName, allowed: status.allowed, expiresAt: status.expiresAt }; },
+  }), [audioId, lifetime]);
   useEffect(() => {
-    let cancelled = false;
-    void availability().then(value => { if (!cancelled) { setEnabled(value); setNotice(value ? "Development audio is available to this account. Use fictional data only." : "Development audio is disabled. No call or payment will be created."); } }).catch(() => { if (!cancelled) setNotice("Availability could not be verified. Audio remains disabled."); });
-    const saved = sessionStorage.getItem(storageKey);
-    if (saved) void readDevelopment(saved).then(value => { if (!cancelled) setSession(value); }).catch(() => { if (!cancelled) setNotice("A previous session could not be recovered. Its usage remains under server reconciliation."); });
-    return () => { cancelled = true; void controller.disconnect(); };
-  }, [controller]);
+    const scope = lifetime.activate();
+    void availability({ signal: scope.signal }).then(value => { if (!scope.signal.aborted) { setEnabled(value); setNotice(value ? "Development audio is available to this account. Use fictional data only." : "Development audio is disabled. No call or payment will be created."); } }).catch(() => { if (!scope.signal.aborted) setNotice("Availability could not be verified. Audio remains disabled."); });
+    void Promise.resolve().then(() => sessionStorage.getItem(storageKey)).then(async saved => {
+      if (!saved || scope.signal.aborted) return;
+      const value = await readDevelopment(saved, { signal: scope.signal });
+      if (!scope.signal.aborted) setSession(value);
+    }).catch(() => { if (!scope.signal.aborted) setNotice("A previous session could not be recovered. Existing usage remains under server reconciliation."); });
+    return () => { scope.abort(); void controller.disconnect(); };
+  }, [controller, storageKey, lifetime]);
   const sessionId = session?.sessionId;
   useEffect(() => {
     if (!sessionId) return;
-    let cancelled = false;
-    const timer = setInterval(() => { void readDevelopment(sessionId).then(value => {
-      if (cancelled) return;
+    const scope = new AbortController();
+    let pending = false;
+    const timer = setInterval(() => { if (pending) return; pending = true; void readDevelopment(sessionId, { signal: scope.signal }).then(value => {
+      if (scope.signal.aborted) return;
       setSession(value);
       if (["ended", "failed", "expired"].includes(value.state)) sessionStorage.removeItem(attemptKey);
       if (!value.allowed) { setConnection(null); void controller.disconnect(); }
-    }).catch(() => { if (!cancelled) { setSession(previous => previous ? { ...previous, allowed: false } : previous); setNotice("Session authorization could not be refreshed. Local audio disconnected; server reconciliation remains pending."); void controller.disconnect(); } }); }, 5000);
-    return () => { cancelled = true; clearInterval(timer); };
-  }, [sessionId, controller]);
+    }).catch(() => { if (!scope.signal.aborted) { setSession(previous => previous ? { ...previous, allowed: false } : previous); setNotice("Session authorization could not be refreshed. Local audio disconnected; server reconciliation remains pending."); void controller.disconnect(); } }).finally(() => { pending = false; }); }, 5000);
+    return () => { scope.abort(); clearInterval(timer); };
+  }, [sessionId, controller, attemptKey]);
   async function start() {
-    if (busy || !consentReady || !enabled) return;
-    setBusy(true);
+    if (operation.current || !consentReady || !enabled) return;
+    operation.current = true; setBusy(true);
+    const signal = lifetime.signal;
     try {
       if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) throw new Error();
       // Check actual permission before any provider operation; no recording or transmission here.
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-      stream.getTracks().forEach(track => track.stop());
-      await updateConsent("voice_microphone", "grant");
-      await updateConsent("voice_vendor_processing", "grant");
+      await probeMicrophone(signal, () => navigator.mediaDevices.getUserMedia({ audio: true, video: false }));
+      await currentStep(signal, () => updateConsent("voice_microphone", "grant", { signal }));
+      await currentStep(signal, () => updateConsent("voice_vendor_processing", "grant", { signal }));
       const key = sessionStorage.getItem(attemptKey) ?? crypto.randomUUID();
       sessionStorage.setItem(attemptKey, key);
-      const value = await startDevelopment(key);
+      const value = await currentStep(signal, () => startDevelopment(key, { signal }));
       sessionStorage.setItem(storageKey, value.sessionId); setSession(value);
       setNotice("Session intent recorded. Unknown operations retain their reservation; no replacement call is created.");
-    } catch { setNotice("Start could not be confirmed. Check microphone access and refresh status; retries retain the same request key."); }
-    finally { setBusy(false); }
+    } catch { if (!signal.aborted) setNotice("Start could not be confirmed. Check microphone access and refresh status; retries retain the same request key."); }
+    finally { operation.current = false; if (!signal.aborted) setBusy(false); }
   }
   async function prepareConnection() {
-    if (!session || busy || !consentReady) return;
-    setBusy(true);
-    try { setConnection(await connectDevelopment(session.sessionId)); }
-    catch { setNotice("Connection could not be confirmed. Refresh this same session; no replacement call was requested."); }
-    finally { setBusy(false); }
+    if (!session || operation.current || !consentReady) return;
+    operation.current = true; setBusy(true); const signal = lifetime.signal;
+    try { setConnection(await currentStep(signal, () => connectDevelopment(session.sessionId, { signal }))); }
+    catch { if (!signal.aborted) setNotice("Connection could not be confirmed. Refresh this same session; no replacement call was requested."); }
+    finally { operation.current = false; if (!signal.aborted) setBusy(false); }
   }
   async function finish(revoke = false) {
-    setBusy(true); setConnection(null);
-    await controller.disconnect();
+    if (operation.current) return;
+    operation.current = true; setBusy(true); setConnection(null);
+    const signal = lifetime.signal;
     try {
+      await currentStep(signal, () => controller.disconnect());
       if (revoke) {
         setAccepted(false); setMicrophone(false); setVendor(false);
-        await Promise.all([updateConsent("voice_microphone", "revoke"), updateConsent("voice_vendor_processing", "revoke")]);
+        await currentStep(signal, () => Promise.all([updateConsent("voice_microphone", "revoke", { signal }), updateConsent("voice_vendor_processing", "revoke", { signal })]));
       }
-      if (session) setSession(await endDevelopment(session.sessionId));
+      if (session) setSession(await currentStep(signal, () => endDevelopment(session.sessionId, { signal })));
       setNotice("Termination requested. Only confirmed provider evidence settles reserved usage.");
-    } catch { setNotice("Termination or consent update could not be confirmed. Local audio is disconnected; server recovery must confirm the provider state."); }
-    finally { setBusy(false); }
+    } catch { if (!signal.aborted) setNotice("Termination or consent update could not be confirmed. Local audio is disconnected; server recovery must confirm the provider state."); }
+    finally { operation.current = false; if (!signal.aborted) setBusy(false); }
   }
   const open = session && ["reserved", "active"].includes(session.state);
   return <div className="reference-container py-10">
@@ -109,5 +123,6 @@ export default function VoiceDevelopment() {
     <div className="mt-6"><VoiceAudioControls controller={controller} connection={connection} consent={{ aiDisclosureAccepted: accepted, microphone, vendorProcessing: vendor }} /></div>
     <p className="mt-4 text-body">A dashboard connection error alone does not identify a wrong token. The server also requires an authorized call binding, current consent and development gates.</p>
     {session && userId && <VoiceCaseCompanion key={`${userId}:${session.sessionId}`} voice={session.sessionId} account={userId} enabled={Boolean(session.allowed && consentReady && !session.endRequested && !busy)} />}
+    {session && <VoiceActivityRecap key={`${userId}:${session.sessionId}:activity`} account={userId} voice={session.sessionId} />}
   </div>;
 }

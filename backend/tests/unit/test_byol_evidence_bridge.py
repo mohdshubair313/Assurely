@@ -294,6 +294,14 @@ async def test_expired_postcommit_send_deadline_emits_no_frame_or_completion():
         '{"response_id":-Infinity}',
         "x" * 32769,
     ],
+    ids=[
+        "duplicate-id",
+        "duplicate-nested",
+        "nan",
+        "positive-infinity",
+        "negative-infinity",
+        "oversize",
+    ],
 )
 def test_raw_frame_parser_rejects_ambiguous_nonfinite_and_oversized_input(raw):
     from app.voice.byol_runtime import parse_frame

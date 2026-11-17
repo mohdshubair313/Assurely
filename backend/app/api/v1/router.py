@@ -25,6 +25,7 @@ from app.api.v1.report_release import router as report_release_router
 from app.api.v1.sessions import router as sessions_router
 from app.api.v1.vaani import router as vaani_router
 from app.api.v1.voice import router as voice_router
+from app.api.v1.voice_activity import router as voice_activity_router
 from app.api.v1.voice_development import router as voice_development_router
 from app.api.v1.webhooks import router as webhooks_router
 
@@ -36,6 +37,7 @@ api_v1_router.include_router(consent_router, tags=["consent"])
 api_v1_router.include_router(sessions_router, tags=["sessions"])
 api_v1_router.include_router(voice_router, tags=["voice"])
 api_v1_router.include_router(voice_development_router, tags=["voice-development"])
+api_v1_router.include_router(voice_activity_router, tags=["voice-development"])
 api_v1_router.include_router(vaani_router, tags=["voice-provider"])
 api_v1_router.include_router(webhooks_router, tags=["webhooks"])
 api_v1_router.include_router(policy_reviews_router, tags=["policy-reviews"])
